@@ -9,6 +9,8 @@ DEFAULT_PORT=2026
 PORT=""
 INCUS_SOCKET=""
 SOURCE_DIR="/tmp/lxcmaster-src"
+USE_PREBUILT=false
+SKIP_BUILD=false
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -99,136 +101,173 @@ get_port() {
         
         if [[ -z "$PORT_INPUT" ]]; then
             PORT=$DEFAULT_PORT
-            log_info "使用默认端口: $PORT"
+        elif [[ "$PORT_INPUT" =~ ^[0-9]+$ ]] && [[ "$PORT_INPUT" -ge 1 ]] && [[ "$PORT_INPUT" -le 65535 ]]; then
+            PORT=$PORT_INPUT
         else
-            if [[ "$PORT_INPUT" =~ ^[0-9]+$ ]] && [[ "$PORT_INPUT" -ge 1 ]] && [[ "$PORT_INPUT" -le 65535 ]]; then
-                PORT=$PORT_INPUT
-                log_info "使用端口: $PORT"
-            else
-                log_error "无效的端口号，使用默认端口: $DEFAULT_PORT"
-                PORT=$DEFAULT_PORT
-            fi
+            log_warn "无效的端口号，使用默认端口 $DEFAULT_PORT"
+            PORT=$DEFAULT_PORT
         fi
     else
         PORT=$DEFAULT_PORT
         log_info "非交互模式，使用默认端口: $PORT"
     fi
+    
+    log_info "服务端口: $PORT"
+}
+
+detect_incus() {
+    log_step "检测 Incus/LXD..."
+    
+    if command -v incus &>/dev/null; then
+        INCUS_SOCKET="/var/lib/incus/unix.socket"
+        log_info "检测到 Incus"
+    elif command -v lxc &>/dev/null && lxc --version &>/dev/null; then
+        if snap list 2>/dev/null | grep -q "^lxd"; then
+            INCUS_SOCKET="/var/snap/lxd/common/lxd/unix.socket"
+            log_info "检测到 LXD (Snap)"
+        else
+            INCUS_SOCKET="/var/lib/lxd/unix.socket"
+            log_info "检测到 LXD"
+        fi
+    else
+        log_warn "未检测到 Incus 或 LXD，安装完成后需要手动配置"
+        INCUS_SOCKET="/var/lib/incus/unix.socket"
+    fi
+}
+
+install_dependencies() {
+    log_step "安装依赖..."
+    
+    apt-get update -qq
+    
+    apt-get install -y -qq \
+        curl \
+        wget \
+        git \
+        ca-certificates \
+        gnupg \
+        lsb-release \
+        software-properties-common \
+        apt-transport-https
+    
+    log_info "基础依赖安装完成"
+}
+
+install_go() {
+    if command -v go &>/dev/null && go version &>/dev/null; then
+        GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
+        log_info "Go 已安装: $GO_VERSION"
+        return 0
+    fi
+    
+    log_step "安装 Go..."
+    
+    GO_VERSION="1.21.6"
+    GO_TARBALL="go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
+    GO_URL="https://golang.org/dl/${GO_TARBALL}"
+    
+    cd /tmp
+    if ! wget -q --timeout=30 "$GO_URL" -O "$GO_TARBALL" 2>/dev/null; then
+        log_warn "官方源下载失败，尝试国内镜像..."
+        GO_URL="https://mirrors.aliyun.com/golang/${GO_TARBALL}"
+        wget -q --timeout=60 "$GO_URL" -O "$GO_TARBALL"
+    fi
+    
+    rm -rf /usr/local/go
+    tar -C /usr/local -xzf "$GO_TARBALL"
+    rm -f "$GO_TARBALL"
+    
+    export PATH=$PATH:/usr/local/go/bin
+    
+    if ! command -v go &>/dev/null; then
+        echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile
+        echo 'export PATH=$PATH:/usr/local/go/bin' >> /root/.bashrc
+    fi
+    
+    log_info "Go 安装完成: $(go version)"
+}
+
+install_nodejs() {
+    if command -v node &>/dev/null && node --version &>/dev/null; then
+        NODE_VERSION=$(node --version)
+        log_info "Node.js 已安装: $NODE_VERSION"
+        return 0
+    fi
+    
+    log_step "安装 Node.js..."
+    
+    if ! command -v npm &>/dev/null; then
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash - &>/dev/null
+        apt-get install -y -qq nodejs
+    fi
+    
+    log_info "Node.js 安装完成: $(node --version)"
 }
 
 install_incus() {
-    log_step "检查并安装 Incus..."
+    if command -v incus &>/dev/null || command -v lxc &>/dev/null; then
+        log_info "Incus/LXD 已安装"
+        return 0
+    fi
     
-    if command -v incus &> /dev/null; then
-        INCUS_VERSION=$(incus --version 2>/dev/null || echo "unknown")
-        log_info "已安装 Incus $INCUS_VERSION"
-    else
-        NEED_SNAP=false
+    log_step "安装 Incus..."
+    
+    if [[ "$OS_ID" == "ubuntu" ]]; then
+        local ubuntu_version=$(echo "$OS_VERSION_ID" | cut -d. -f1)
         
-        if [[ "$OS_ID" == "ubuntu" ]]; then
-            case "$OS_CODENAME" in
-                focal)
-                    log_info "Ubuntu 20.04 检测到，将使用 Snap 安装 Incus"
-                    NEED_SNAP=true
-                    ;;
-                jammy)
-                    INCUS_CODENAME="jammy"
-                    ;;
-                noble)
-                    INCUS_CODENAME="noble"
-                    ;;
-                *)
-                    INCUS_CODENAME="jammy"
-                    log_warn "未测试的 Ubuntu 版本 $OS_CODENAME，尝试使用 jammy 仓库"
-                    ;;
-            esac
+        if [[ "$ubuntu_version" -ge "24" ]]; then
+            apt-get install -y -qq incus
+        elif [[ "$ubuntu_version" -ge "22" ]]; then
+            add-apt-repository ppa:ubuntu-lxc/incus -y &>/dev/null
+            apt-get update -qq
+            apt-get install -y -qq incus
         else
-            case "$OS_CODENAME" in
-                bullseye)
-                    INCUS_CODENAME="bullseye"
-                    ;;
-                bookworm)
-                    INCUS_CODENAME="bookworm"
-                    ;;
-                *)
-                    log_warn "未测试的 Debian 版本 $OS_CODENAME，尝试使用 Snap 安装"
-                    NEED_SNAP=true
-                    ;;
-            esac
+            log_warn "Ubuntu ${OS_VERSION_ID} 使用 Snap 安装 LXD"
+            if ! command -v snap &>/dev/null; then
+                apt-get install -y -qq snapd
+            fi
+            snap install lxd --classic
         fi
-        
-        if [[ "$NEED_SNAP" == "true" ]]; then
-            log_info "正在安装 Snap..."
-            apt-get update
-            apt-get install -y snapd
-            
-            log_info "正在通过 Snap 安装 Incus..."
-            snap install incus --classic
-            
-            if ! command -v incus &> /dev/null; then
-                export PATH=$PATH:/snap/bin
-            fi
-            
-            if command -v incus &> /dev/null; then
-                INCUS_VERSION=$(incus --version 2>/dev/null || echo "unknown")
-                log_info "Incus $INCUS_VERSION 安装成功 (Snap)"
-            else
-                log_error "Incus 安装失败"
-                exit 1
-            fi
+    elif [[ "$OS_ID" == "debian" ]]; then
+        if [[ "$OS_VERSION_ID" == "12" ]]; then
+            apt-get install -y -qq incus
         else
-            log_info "正在添加 Incus 官方仓库..."
-            
-            apt-get update
-            apt-get install -y curl gnupg2
-            
-            curl -fsSL "https://pkgs.zabbly.com/key.asc" | gpg --dearmor -o /usr/share/keyrings/zabbly.gpg
-            
-            cat > /etc/apt/sources.list.d/zabbly-incus-stable.sources << EOF
-Enabled: yes
-Types: deb
-URIs: https://pkgs.zabbly.com/incus/stable
-Suites: ${INCUS_CODENAME}
-Components: main
-Architectures: $(dpkg --print-architecture)
-Signed-By: /usr/share/keyrings/zabbly.gpg
-EOF
-            
-            log_info "正在安装 Incus..."
-            apt-get update
-            apt-get install -y incus
-            
-            if command -v incus &> /dev/null; then
-                INCUS_VERSION=$(incus --version 2>/dev/null || echo "unknown")
-                log_info "Incus $INCUS_VERSION 安装成功"
-            else
-                log_error "Incus 安装失败"
-                exit 1
+            log_warn "Debian ${OS_VERSION_ID} 使用 Snap 安装 LXD"
+            if ! command -v snap &>/dev/null; then
+                apt-get install -y -qq snapd
             fi
+            snap install lxd --classic
         fi
     fi
     
-    if ! incus storage list 2>/dev/null | grep -q "default"; then
-        log_step "初始化 Incus..."
-        log_info "正在自动配置 Incus (使用默认配置)..."
-        
-        cat << 'INCUS_INIT' | incus admin init --preseed
-config: {}
+    log_info "Incus/LXD 安装完成"
+}
+
+init_incus() {
+    if command -v incus &>/dev/null; then
+        if ! incus info &>/dev/null 2>&1; then
+            log_step "初始化 Incus..."
+            
+            cat <<EOF | incus admin init --preseed
+config:
+  core.https_address: ''
+  core.trust_password: ''
 networks:
 - config:
     ipv4.address: auto
     ipv6.address: auto
   description: ""
   name: incusbr0
-  type: ""
-  project: default
+  type: bridge
 storage_pools:
-- config: {}
+- config:
+    size: auto
   description: ""
   name: default
   driver: dir
 profiles:
 - config: {}
-  description: ""
+  description: Default Incus profile
   devices:
     eth0:
       name: eth0
@@ -239,114 +278,27 @@ profiles:
       pool: default
       type: disk
   name: default
-projects: []
-cluster: null
-INCUS_INIT
-        
-        if incus storage list 2>/dev/null | grep -q "default"; then
-            log_info "Incus 初始化成功"
-        else
-            log_warn "Incus 自动初始化失败，请手动运行: incus admin init"
-        fi
-    else
-        log_info "Incus 已初始化"
-    fi
-    
-    if [[ -S "/var/snap/incus/common/incus.socket" ]]; then
-        INCUS_SOCKET="/var/snap/incus/common/incus.socket"
-    else
-        INCUS_SOCKET="/var/lib/incus/unix.socket"
-    fi
-}
-
-install_go() {
-    log_step "安装 Go 环境..."
-    
-    if command -v go &> /dev/null; then
-        GO_VERSION=$(go version 2>/dev/null | awk '{print $3}' | sed 's/go//')
-        log_info "已安装 Go $GO_VERSION"
-        return 0
-    fi
-    
-    log_info "正在安装 Go..."
-    
-    GO_VERSION="1.21.6"
-    GO_FILE="go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
-    GO_URL="https://go.dev/dl/${GO_FILE}"
-    GO_MIRROR="https://mirrors.aliyun.com/golang/${GO_FILE}"
-    
-    log_info "下载 Go $GO_VERSION ($GO_ARCH)..."
-    
-    cd /tmp
-    if wget -q "$GO_MIRROR" -O "$GO_FILE" 2>/dev/null || wget -q "$GO_URL" -O "$GO_FILE"; then
-        tar -C /usr/local -xzf "$GO_FILE"
-        rm -f "$GO_FILE"
-        
-        export PATH=$PATH:/usr/local/go/bin
-        echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile
-        
-        if ! grep -q '/usr/local/go/bin' /etc/environment 2>/dev/null; then
-            sed -i 's|PATH="\(.*\)"|PATH="\1:/usr/local/go/bin"|' /etc/environment 2>/dev/null || true
+EOF
+            log_info "Incus 初始化完成"
         fi
         
-        log_info "Go $GO_VERSION 安装完成"
-    else
-        log_error "Go 下载失败，尝试使用包管理器安装..."
-        apt-get install -y golang-go
-    fi
-    
-    cd - > /dev/null
-}
-
-install_nodejs() {
-    log_step "安装 Node.js 环境..."
-    
-    if command -v node &> /dev/null; then
-        NODE_VERSION=$(node --version 2>/dev/null)
-        log_info "已安装 Node.js $NODE_VERSION"
-        return 0
-    fi
-    
-    log_info "正在安装 Node.js..."
-    
-    NODE_VERSION="20.11.0"
-    NODE_FILE="node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz"
-    NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/${NODE_FILE}"
-    NODE_MIRROR="https://npmmirror.com/mirrors/node/v${NODE_VERSION}/${NODE_FILE}"
-    
-    log_info "下载 Node.js $NODE_VERSION ($NODE_ARCH)..."
-    
-    cd /tmp
-    if wget -q "$NODE_MIRROR" -O "$NODE_FILE" 2>/dev/null || wget -q "$NODE_URL" -O "$NODE_FILE"; then
-        tar -C /usr/local -xJf "$NODE_FILE"
-        rm -f "$NODE_FILE"
+        incus image copy images:alpine/3.18 local: --alias alpine/3.18 --auto-update &>/dev/null || true
+        incus image copy images:debian/11 local: --alias debian/11 --auto-update &>/dev/null || true
         
-        NODE_DIR="/usr/local/node-v${NODE_VERSION}-linux-${NODE_ARCH}"
-        ln -sf "$NODE_DIR/bin/node" /usr/local/bin/node
-        ln -sf "$NODE_DIR/bin/npm" /usr/local/bin/npm
-        ln -sf "$NODE_DIR/bin/npx" /usr/local/bin/npx
+    elif command -v lxc &>/dev/null; then
+        if ! lxc info &>/dev/null 2>&1; then
+            log_step "初始化 LXD..."
+            lxd init --auto
+            log_info "LXD 初始化完成"
+        fi
         
-        log_info "Node.js $NODE_VERSION 安装完成"
-    else
-        log_error "Node.js 下载失败，尝试使用包管理器安装..."
-        apt-get install -y nodejs npm
+        lxc image copy images:alpine/3.18 local: --alias alpine/3.18 --auto-update &>/dev/null || true
+        lxc image copy images:debian/11 local: --alias debian/11 --auto-update &>/dev/null || true
     fi
-    
-    cd - > /dev/null
-}
-
-install_dependencies() {
-    log_step "安装系统依赖..."
-    
-    apt-get update
-    apt-get install -y curl wget git ca-certificates
-    
-    install_go
-    install_nodejs
 }
 
 clone_repo() {
-    log_step "克隆项目源码..."
+    log_step "克隆源码..."
     
     rm -rf "$SOURCE_DIR"
     git clone --depth 1 https://github.com/w243420707/LXCmaster.git "$SOURCE_DIR"
@@ -370,30 +322,63 @@ create_directories() {
     log_info "数据目录: $DATA_DIR"
 }
 
-build_backend() {
-    log_step "构建后端服务..."
+# 优化的并行构建函数
+build_backend_optimized() {
+    log_step "构建后端服务 (优化模式)..."
     
     cd "$SOURCE_DIR/backend"
     
     export GOPROXY=https://goproxy.cn,direct
     export PATH=$PATH:/usr/local/go/bin
+    export GO111MODULE=on
+    export CGO_ENABLED=0
     
-    go mod download
-    CGO_ENABLED=0 go build -ldflags="-s -w" -o "$INSTALL_DIR/lxcmaster" ./cmd/server
+    # 使用缓存加速依赖下载
+    if [[ -d "$DATA_DIR/go-mod-cache" ]]; then
+        export GOMODCACHE="$DATA_DIR/go-mod-cache"
+    fi
+    
+    # 并行下载依赖
+    log_info "下载 Go 依赖..."
+    go mod download -x &
+    local pid_download=$!
+    
+    # 等待下载完成
+    wait $pid_download
+    
+    # 优化构建：禁用调试信息，减小体积，加速编译
+    log_info "编译后端..."
+    go build -ldflags="-s -w -extldflags '-static'" \
+        -gcflags="-l=4" \
+        -o "$INSTALL_DIR/lxcmaster" \
+        ./cmd/server
     
     log_info "后端构建完成"
     cd - > /dev/null
 }
 
-build_frontend() {
-    log_step "构建前端界面..."
+# 优化的前端构建
+build_frontend_optimized() {
+    log_step "构建前端界面 (优化模式)..."
     
     cd "$SOURCE_DIR/frontend"
     
-    npm install --registry=https://registry.npmmirror.com --silent
-    npm run build
+    # 使用 npm ci 替代 npm install（更快更可靠）
+    if [[ -f "package-lock.json" ]]; then
+        log_info "使用 npm ci 安装依赖..."
+        npm ci --registry=https://registry.npmmirror.com --prefer-offline --no-audit --progress=false
+    else
+        log_info "使用 npm install 安装依赖..."
+        npm install --registry=https://registry.npmmirror.com --no-audit --progress=false
+    fi
+    
+    # 使用 Vite 的优化构建
+    log_info "构建前端..."
+    NODE_ENV=production npm run build
     
     if [[ -d "dist" ]]; then
+        # 清理旧文件并复制新文件
+        rm -rf "$INSTALL_DIR/frontend"/*
         cp -r dist/* "$INSTALL_DIR/frontend/"
         log_info "前端构建完成"
     else
@@ -402,6 +387,66 @@ build_frontend() {
     fi
     
     cd - > /dev/null
+}
+
+# 并行构建函数
+build_parallel() {
+    log_step "开始并行构建 (后端+前端)..."
+    
+    local start_time=$(date +%s)
+    
+    # 后台构建后端
+    (build_backend_optimized) &
+    local pid_backend=$!
+    
+    # 后台构建前端
+    (build_frontend_optimized) &
+    local pid_frontend=$!
+    
+    # 等待两个构建完成
+    local failed=0
+    wait $pid_backend || { log_error "后端构建失败"; failed=1; }
+    wait $pid_frontend || { log_error "前端构建失败"; failed=1; }
+    
+    if [[ $failed -eq 1 ]]; then
+        exit 1
+    fi
+    
+    local end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+    log_info "并行构建完成，耗时: ${duration}秒"
+}
+
+# 使用预编译二进制文件
+use_prebuilt_binaries() {
+    log_step "使用预编译二进制文件..."
+    
+    local VERSION="latest"
+    local DOWNLOAD_URL="https://github.com/w243420707/LXCmaster/releases/download/${VERSION}"
+    
+    # 下载后端二进制
+    log_info "下载后端二进制..."
+    if wget -q --timeout=60 "${DOWNLOAD_URL}/lxcmaster-linux-${ARCH_TYPE}" -O "$INSTALL_DIR/lxcmaster" 2>/dev/null; then
+        chmod +x "$INSTALL_DIR/lxcmaster"
+        log_info "后端下载完成"
+    else
+        log_warn "预编译后端下载失败，将本地构建"
+        return 1
+    fi
+    
+    # 下载前端静态文件
+    log_info "下载前端静态文件..."
+    if wget -q --timeout=60 "${DOWNLOAD_URL}/frontend-${ARCH_TYPE}.tar.gz" -O /tmp/frontend.tar.gz 2>/dev/null; then
+        rm -rf "$INSTALL_DIR/frontend"/*
+        tar -xzf /tmp/frontend.tar.gz -C "$INSTALL_DIR/frontend"
+        rm -f /tmp/frontend.tar.gz
+        log_info "前端下载完成"
+    else
+        log_warn "预编译前端下载失败，将本地构建"
+        return 1
+    fi
+    
+    return 0
 }
 
 create_config() {
@@ -467,98 +512,189 @@ start_service() {
     log_step "启动服务..."
     systemctl start lxcmaster
     
-    sleep 3
+    sleep 2
     
     if systemctl is-active --quiet lxcmaster; then
-        log_info "服务启动成功!"
+        log_info "服务启动成功"
     else
         log_error "服务启动失败"
-        log_info "查看日志: journalctl -u lxcmaster -n 50"
+        systemctl status lxcmaster --no-pager
         exit 1
     fi
 }
 
-download_images() {
-    log_step "下载预设镜像..."
+get_public_ip() {
+    local ip=""
     
-    log_info "下载 Alpine 3.18 镜像..."
-    if incus image copy images:alpine/3.18 local: --alias alpine/3.18 --auto-update 2>/dev/null; then
-        log_info "Alpine 3.18 镜像下载完成"
-    else
-        log_warn "Alpine 3.18 镜像下载失败，请手动下载: incus image copy images:alpine/3.18 local: --alias alpine/3.18"
-    fi
+    ip=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null) || \
+    ip=$(curl -s --max-time 5 https://ifconfig.me 2>/dev/null) || \
+    ip=$(curl -s --max-time 5 https://icanhazip.com 2>/dev/null) || \
+    ip=$(hostname -I 2>/dev/null | awk '{print $1}')
     
-    log_info "下载 Debian 11 镜像..."
-    if incus image copy images:debian/11 local: --alias debian/11 --auto-update 2>/dev/null; then
-        log_info "Debian 11 镜像下载完成"
-    else
-        log_warn "Debian 11 镜像下载失败，请手动下载: incus image copy images:debian/11 local: --alias debian/11"
-    fi
+    echo "$ip"
 }
 
-print_success() {
-    SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || curl -s ip.sb 2>/dev/null || hostname -I | awk '{print $1}')
+print_completion() {
+    local ip=$(get_public_ip)
+    local access_url="http://${ip}:${PORT}"
     
     echo ""
+    echo -e "${GREEN}========================================${NC}"
+    echo -e "${GREEN}  LXCmaster 安装完成!${NC}"
+    echo -e "${GREEN}========================================${NC}"
     echo ""
-    echo -e "${GREEN}╔════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║                                                        ║${NC}"
-    echo -e "${GREEN}║           LXCmaster 安装完成!                          ║${NC}"
-    echo -e "${GREEN}║                                                        ║${NC}"
-    echo -e "${GREEN}╚════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${BLUE}访问地址:${NC} ${YELLOW}${access_url}${NC}"
+    echo -e "${BLUE}监听端口:${NC} ${PORT}"
     echo ""
-    echo -e "${YELLOW}➤ 系统信息:${NC}"
-    echo -e "   系统: $OS_PRETTY_NAME"
-    echo -e "   架构: $ARCH_TYPE"
-    echo -e "   端口: $PORT"
+    echo -e "${BLUE}安装目录:${NC} ${INSTALL_DIR}"
+    echo -e "${BLUE}数据目录:${NC} ${DATA_DIR}"
+    echo -e "${BLUE}配置文件:${NC} ${DATA_DIR}/config.json"
     echo ""
-    echo -e "${GREEN}➤ 管理面板访问地址:${NC}"
+    echo -e "${BLUE}服务管理命令:${NC}"
+    echo "  systemctl start|stop|restart|status lxcmaster"
     echo ""
-    echo -e "   ${GREEN}http://$SERVER_IP:$PORT${NC}"
+    echo -e "${YELLOW}注意: 如果无法访问，请检查防火墙设置${NC}"
+    echo -e "${YELLOW}      可能需要开放端口 ${PORT}${NC}"
     echo ""
-    echo -e "${YELLOW}➤ 预设镜像:${NC}"
-    echo -e "   • Alpine 3.18 (轻量推荐)"
-    echo -e "   • Debian 11 (稳定)"
-    echo ""
-    echo -e "${YELLOW}➤ 常用命令:${NC}"
-    echo -e "   查看状态: systemctl status lxcmaster"
-    echo -e "   查看日志: journalctl -u lxcmaster -f"
-    echo -e "   重新启动: systemctl restart lxcmaster"
-    echo -e "   停止服务: systemctl stop lxcmaster"
-    echo ""
-    echo -e "${YELLOW}➤ 配置文件:${NC} $DATA_DIR/config.json"
-    echo ""
+    echo -e "${GREEN}========================================${NC}"
 }
 
-print_banner() {
-    echo ""
-    echo "========================================"
-    echo "   LXCmaster 一键安装脚本"
-    echo "   Incus 容器管理面板"
-    echo "========================================"
-    echo ""
+# 快速安装模式（用于更新）
+quick_install() {
+    log_step "快速安装模式 (仅更新)..."
+    
+    # 停止服务
+    systemctl stop lxcmaster 2>/dev/null || true
+    
+    # 克隆最新代码
+    clone_repo
+    
+    # 并行构建
+    build_parallel
+    
+    # 设置权限
+    set_permissions
+    
+    # 启动服务
+    start_service
+    
+    log_info "快速更新完成"
 }
 
+# 显示帮助
+show_help() {
+    cat << EOF
+LXCmaster 安装脚本
+
+用法: bash install.sh [选项]
+
+选项:
+    -h, --help          显示帮助信息
+    -q, --quick         快速更新模式（仅重新构建和重启服务）
+    -p, --prebuilt      尝试使用预编译二进制文件（更快）
+    -s, --skip-build    跳过构建（用于配置更新）
+    --port PORT         指定服务端口（默认: 2026）
+
+环境变量:
+    LXCMASTER_PORT      指定服务端口
+
+示例:
+    bash install.sh                    # 完整安装
+    bash install.sh -q                 # 快速更新
+    bash install.sh -p                 # 使用预编译二进制
+    bash install.sh --port 8080        # 指定端口 8080
+EOF
+}
+
+# 解析命令行参数
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            -q|--quick)
+                SKIP_BUILD=false
+                USE_PREBUILT=false
+                QUICK_MODE=true
+                shift
+                ;;
+            -p|--prebuilt)
+                USE_PREBUILT=true
+                shift
+                ;;
+            -s|--skip-build)
+                SKIP_BUILD=true
+                shift
+                ;;
+            --port)
+                PORT="$2"
+                shift 2
+                ;;
+            *)
+                log_error "未知选项: $1"
+                show_help
+                exit 1
+                ;;
+        esac
+    done
+}
+
+# 主函数
 main() {
-    print_banner
+    parse_args "$@"
     
     check_root
+    
+    # 快速模式
+    if [[ "${QUICK_MODE:-false}" == "true" ]]; then
+        detect_system
+        detect_arch
+        detect_incus
+        get_port
+        quick_install
+        print_completion
+        exit 0
+    fi
+    
     detect_system
     detect_arch
+    detect_incus
     get_port
-    install_incus
+    
     install_dependencies
-    clone_repo
+    install_go
+    install_nodejs
+    install_incus
+    
     create_user
     create_directories
-    build_backend
-    build_frontend
+    
+    # 如果跳过构建，直接配置
+    if [[ "$SKIP_BUILD" == "true" ]]; then
+        log_info "跳过构建步骤"
+    else
+        clone_repo
+        
+        # 尝试使用预编译二进制
+        if [[ "$USE_PREBUILT" == "true" ]]; then
+            if ! use_prebuilt_binaries; then
+                log_info "预编译二进制不可用，使用本地构建"
+                build_parallel
+            fi
+        else
+            build_parallel
+        fi
+    fi
+    
     create_config
     install_service
     set_permissions
+    init_incus
     start_service
-    download_images
-    print_success
+    
+    print_completion
 }
 
 main "$@"
