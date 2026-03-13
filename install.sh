@@ -44,6 +44,7 @@ detect_system() {
         . /etc/os-release
         OS_ID=$(echo "$ID" | tr '[:upper:]' '[:lower:]')
         OS_VERSION_ID="$VERSION_ID"
+        OS_CODENAME="${VERSION_CODENAME:-$UBUNTU_CODENAME}"
         OS_PRETTY_NAME="$PRETTY_NAME"
     else
         log_error "无法检测系统版本"
@@ -119,8 +120,30 @@ install_incus() {
         INCUS_VERSION=$(incus --version 2>/dev/null || echo "unknown")
         log_info "已安装 Incus $INCUS_VERSION"
     else
-        log_info "正在安装 Incus..."
+        log_info "正在添加 Incus 官方仓库..."
         
+        apt-get update
+        apt-get install -y curl gnupg2
+        
+        if [[ "$OS_ID" == "ubuntu" ]]; then
+            INCUS_REPO="ubuntu"
+        else
+            INCUS_REPO="debian"
+        fi
+        
+        curl -fsSL "https://pkgs.zabbly.com/key.asc" | gpg --dearmor -o /usr/share/keyrings/zabbly.gpg
+        
+        cat > /etc/apt/sources.list.d/zabbly-incus-stable.sources << EOF
+Enabled: yes
+Types: deb
+URIs: https://pkgs.zabbly.com/incus/stable
+Suites: ${OS_CODENAME}
+Components: main
+Architectures: $(dpkg --print-architecture)
+Signed-By: /usr/share/keyrings/zabbly.gpg
+EOF
+        
+        log_info "正在安装 Incus..."
         apt-get update
         apt-get install -y incus
         
