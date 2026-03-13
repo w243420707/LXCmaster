@@ -7,6 +7,7 @@ DATA_DIR="/var/lib/lxcmaster"
 SERVICE_USER="lxcmaster"
 DEFAULT_PORT=2026
 PORT=""
+INCUS_SOCKET=""
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -120,18 +121,13 @@ install_incus() {
         INCUS_VERSION=$(incus --version 2>/dev/null || echo "unknown")
         log_info "已安装 Incus $INCUS_VERSION"
     else
-        log_info "正在添加 Incus 官方仓库..."
-        
-        apt-get update
-        apt-get install -y curl gnupg2
+        NEED_SNAP=false
         
         if [[ "$OS_ID" == "ubuntu" ]]; then
             case "$OS_CODENAME" in
                 focal)
-                    log_error "Ubuntu 20.04 (focal) 不被 Incus 官方支持"
-                    log_info "Incus 官方仓库支持的 Ubuntu 版本: 22.04 (jammy), 24.04 (noble)"
-                    log_info "请升级系统或使用 Ubuntu 22.04+ / Debian 11+"
-                    exit 1
+                    log_info "Ubuntu 20.04 检测到，将使用 Snap 安装 Incus"
+                    NEED_SNAP=true
                     ;;
                 jammy)
                     INCUS_CODENAME="jammy"
@@ -153,16 +149,40 @@ install_incus() {
                     INCUS_CODENAME="bookworm"
                     ;;
                 *)
-                    log_error "Debian $OS_CODENAME 不被 Incus 官方支持"
-                    log_info "Incus 官方仓库支持的 Debian 版本: 11 (bullseye), 12 (bookworm)"
-                    exit 1
+                    log_warn "未测试的 Debian 版本 $OS_CODENAME，尝试使用 Snap 安装"
+                    NEED_SNAP=true
                     ;;
             esac
         fi
         
-        curl -fsSL "https://pkgs.zabbly.com/key.asc" | gpg --dearmor -o /usr/share/keyrings/zabbly.gpg
-        
-        cat > /etc/apt/sources.list.d/zabbly-incus-stable.sources << EOF
+        if [[ "$NEED_SNAP" == "true" ]]; then
+            log_info "正在安装 Snap..."
+            apt-get update
+            apt-get install -y snapd
+            
+            log_info "正在通过 Snap 安装 Incus..."
+            snap install incus --classic
+            
+            if ! command -v incus &> /dev/null; then
+                export PATH=$PATH:/snap/bin
+            fi
+            
+            if command -v incus &> /dev/null; then
+                INCUS_VERSION=$(incus --version 2>/dev/null || echo "unknown")
+                log_info "Incus $INCUS_VERSION 安装成功 (Snap)"
+            else
+                log_error "Incus 安装失败"
+                exit 1
+            fi
+        else
+            log_info "正在添加 Incus 官方仓库..."
+            
+            apt-get update
+            apt-get install -y curl gnupg2
+            
+            curl -fsSL "https://pkgs.zabbly.com/key.asc" | gpg --dearmor -o /usr/share/keyrings/zabbly.gpg
+            
+            cat > /etc/apt/sources.list.d/zabbly-incus-stable.sources << EOF
 Enabled: yes
 Types: deb
 URIs: https://pkgs.zabbly.com/incus/stable
@@ -171,17 +191,18 @@ Components: main
 Architectures: $(dpkg --print-architecture)
 Signed-By: /usr/share/keyrings/zabbly.gpg
 EOF
-        
-        log_info "正在安装 Incus..."
-        apt-get update
-        apt-get install -y incus
-        
-        if command -v incus &> /dev/null; then
-            INCUS_VERSION=$(incus --version 2>/dev/null || echo "unknown")
-            log_info "Incus $INCUS_VERSION 安装成功"
-        else
-            log_error "Incus 安装失败"
-            exit 1
+            
+            log_info "正在安装 Incus..."
+            apt-get update
+            apt-get install -y incus
+            
+            if command -v incus &> /dev/null; then
+                INCUS_VERSION=$(incus --version 2>/dev/null || echo "unknown")
+                log_info "Incus $INCUS_VERSION 安装成功"
+            else
+                log_error "Incus 安装失败"
+                exit 1
+            fi
         fi
     fi
     
@@ -229,6 +250,12 @@ INCUS_INIT
         fi
     else
         log_info "Incus 已初始化"
+    fi
+    
+    if [[ -S "/var/snap/incus/common/incus.socket" ]]; then
+        INCUS_SOCKET="/var/snap/incus/common/incus.socket"
+    else
+        INCUS_SOCKET="/var/lib/incus/unix.socket"
     fi
 }
 
@@ -383,12 +410,13 @@ create_config() {
         "data_dir": "$DATA_DIR"
     },
     "incus": {
-        "socket_path": "/var/lib/incus/unix.socket"
+        "socket_path": "$INCUS_SOCKET"
     }
 }
 EOF
     
     log_info "配置文件已创建: $DATA_DIR/config.json"
+    log_info "Incus Socket: $INCUS_SOCKET"
 }
 
 install_service() {
@@ -397,8 +425,7 @@ install_service() {
     cat > /etc/systemd/system/lxcmaster.service << EOF
 [Unit]
 Description=LXCmaster - Incus Container Management Panel
-After=network.target incus.service
-Requires=incus.service
+After=network.target
 
 [Service]
 Type=simple
@@ -406,6 +433,7 @@ User=root
 Group=root
 WorkingDirectory=$INSTALL_DIR
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin"
+ExecStartPre=/bin/bash -c 'for i in {1..30}; do test -S $INCUS_SOCKET && exit 0; sleep 1; done; exit 1'
 ExecStart=$INSTALL_DIR/lxcmaster -port $PORT
 Restart=always
 RestartSec=5

@@ -9,10 +9,8 @@ wget -qO install.sh https://raw.githubusercontent.com/w243420707/LXCmaster/main/
 ```
 
 **支持的系统：**
-- Ubuntu 22.04 (jammy)
-- Ubuntu 24.04 (noble)
-- Debian 11 (bullseye)
-- Debian 12 (bookworm)
+- Ubuntu 20.04+ (使用 Snap 安装 Incus)
+- Debian 11+ (使用官方仓库安装 Incus)
 
 安装脚本会自动完成以下操作：
 1. 检测系统架构 (amd64/arm64)
