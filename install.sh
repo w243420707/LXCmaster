@@ -104,20 +104,72 @@ get_port() {
     fi
 }
 
-check_incus() {
-    log_step "检查 Incus..."
+install_incus() {
+    log_step "检查并安装 Incus..."
     
-    if ! command -v incus &> /dev/null; then
-        log_error "未检测到 Incus，请先安装 Incus"
-        log_info "安装方法: https://linuxcontainers.org/incus/docs/main/installing/"
-        log_info "快速安装 (Ubuntu/Debian):"
-        log_info "  apt update && apt install -y incus"
-        log_info "  incus admin init"
-        exit 1
+    if command -v incus &> /dev/null; then
+        INCUS_VERSION=$(incus --version 2>/dev/null || echo "unknown")
+        log_info "已安装 Incus $INCUS_VERSION"
+    else
+        log_info "正在安装 Incus..."
+        
+        apt-get update
+        apt-get install -y incus
+        
+        if command -v incus &> /dev/null; then
+            INCUS_VERSION=$(incus --version 2>/dev/null || echo "unknown")
+            log_info "Incus $INCUS_VERSION 安装成功"
+        else
+            log_error "Incus 安装失败"
+            exit 1
+        fi
     fi
     
-    INCUS_VERSION=$(incus --version 2>/dev/null || echo "unknown")
-    log_info "Incus 版本: $INCUS_VERSION"
+    if ! incus storage list 2>/dev/null | grep -q "default"; then
+        log_step "初始化 Incus..."
+        log_info "正在自动配置 Incus (使用默认配置)..."
+        
+        cat << 'INCUS_INIT' | incus admin init --preseed
+config: {}
+networks:
+- config:
+    ipv4.address: auto
+    ipv6.address: auto
+  description: ""
+  name: incusbr0
+  type: ""
+  project: default
+storage_pools:
+- config:
+    size: auto
+  description: ""
+  name: default
+  driver: dir
+profiles:
+- config: {}
+  description: ""
+  devices:
+    eth0:
+      name: eth0
+      network: incusbr0
+      type: nic
+    root:
+      path: /
+      pool: default
+      type: disk
+  name: default
+projects: []
+cluster: null
+INCUS_INIT
+        
+        if incus storage list 2>/dev/null | grep -q "default"; then
+            log_info "Incus 初始化成功"
+        else
+            log_warn "Incus 自动初始化失败，请手动运行: incus admin init"
+        fi
+    else
+        log_info "Incus 已初始化"
+    fi
 }
 
 install_go() {
@@ -394,7 +446,7 @@ main() {
     detect_system
     detect_arch
     get_port
-    check_incus
+    install_incus
     install_dependencies
     create_user
     create_directories

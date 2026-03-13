@@ -8,7 +8,13 @@
 curl -fsSL https://raw.githubusercontent.com/w243420707/LXCmaster/main/install.sh | bash
 ```
 
-> **前提条件**: 需要先安装 Incus 并完成初始化 (`incus admin init`)
+安装脚本会自动完成以下操作：
+1. 检测系统架构 (amd64/arm64)
+2. 安装并初始化 Incus
+3. 安装 Go 和 Node.js 环境
+4. 编译后端和前端
+5. 下载预设镜像 (Alpine 3.18、Debian 11)
+6. 配置并启动服务
 
 ## 项目概述
 
