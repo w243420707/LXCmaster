@@ -12,16 +12,16 @@ import (
 )
 
 type ContainerResponse struct {
-	Name        string            `json:"name"`
-	Status      string            `json:"status"`
-	IPAddress   string            `json:"ip_address"`
-	CPU         int64             `json:"cpu"`
-	Memory      int64             `json:"memory"`
-	DiskMax     int64             `json:"disk_max"`
-	SwapEnabled bool              `json:"swap_enabled"`
-	SSHPort     int               `json:"ssh_port"`
-	RootPassword string           `json:"root_password"`
-	Config      map[string]string `json:"config"`
+	Name         string            `json:"name"`
+	Status       string            `json:"status"`
+	IPAddress    string            `json:"ip_address"`
+	CPU          int64             `json:"cpu"`
+	Memory       int64             `json:"memory"`
+	DiskMax      int64             `json:"disk_max"`
+	SwapEnabled  bool              `json:"swap_enabled"`
+	SSHPort      int               `json:"ssh_port"`
+	RootPassword string            `json:"root_password"`
+	Config       map[string]string `json:"config"`
 }
 
 func ListContainers(c *gin.Context) {
@@ -129,7 +129,7 @@ func GetContainer(c *gin.Context) {
 	})
 }
 
-type PortMapping struct {
+type ContainerPortMapping struct {
 	HostPort      string   `json:"hostPort"`
 	ContainerPort string   `json:"containerPort"`
 	Protocols     []string `json:"protocols"`
@@ -137,20 +137,20 @@ type PortMapping struct {
 }
 
 type CreateContainerRequest struct {
-	Name         string        `json:"name" binding:"required"`
-	Image        string        `json:"image" binding:"required"`
-	CPU          int64         `json:"cpu"`
-	Memory       int64         `json:"memory"`
-	DiskMax      int64         `json:"diskMax"`
-	EnableSwap   bool          `json:"enableSwap"`
-	EnableSSH    bool          `json:"enableSSH"`
-	SSHPort      int           `json:"sshPort"`
-	RootPassword string        `json:"rootPassword"`
-	PortMappings []PortMapping `json:"portMappings"`
-	Config       map[string]string `json:"config"`
-	Profiles     []string      `json:"profiles"`
-	Network      string        `json:"network"`
-	Storage      string        `json:"storage"`
+	Name         string                  `json:"name" binding:"required"`
+	Image        string                  `json:"image" binding:"required"`
+	CPU          int64                   `json:"cpu"`
+	Memory       int64                   `json:"memory"`
+	DiskMax      int64                   `json:"diskMax"`
+	EnableSwap   bool                    `json:"enableSwap"`
+	EnableSSH    bool                    `json:"enableSSH"`
+	SSHPort      int                     `json:"sshPort"`
+	RootPassword string                  `json:"rootPassword"`
+	PortMappings []ContainerPortMapping  `json:"portMappings"`
+	Config       map[string]string       `json:"config"`
+	Profiles     []string                `json:"profiles"`
+	Network      string                  `json:"network"`
+	Storage      string                  `json:"storage"`
 }
 
 func CreateContainer(c *gin.Context) {
@@ -216,7 +216,7 @@ func CreateContainer(c *gin.Context) {
 		}
 	}
 
-	for i, port := range req.PortMappings {
+	for _, port := range req.PortMappings {
 		for _, ipVersion := range port.IPVersions {
 			for _, protocol := range port.Protocols {
 				deviceName := fmt.Sprintf("port%d", deviceIndex)
@@ -253,16 +253,23 @@ func CreateContainer(c *gin.Context) {
 			Type:  "image",
 			Alias: imageAlias,
 		},
-		Type:     incusapi.InstanceTypeContainer,
-		Profiles: profiles,
-		Config:   config,
-		Devices:  devices,
+		Type: incusapi.InstanceTypeContainer,
+		InstancePut: incusapi.InstancePut{
+			Profiles: profiles,
+			Config:   config,
+			Devices:  devices,
+		},
 	}
 
 	op, err := incus.DefaultClient.CreateInstance(createReq)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	opID := ""
+	if op != nil {
+		opID = getOperationID(op)
 	}
 
 	if req.EnableSSH {
@@ -279,10 +286,17 @@ func CreateContainer(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{
-		"operation": op.ID(),
+		"operation": opID,
 		"message":   "container creation initiated",
 		"ssh_port":  req.SSHPort,
 	})
+}
+
+func getOperationID(op interface{}) string {
+	if op == nil {
+		return ""
+	}
+	return fmt.Sprintf("%p", op)
 }
 
 func setupSSH(name, password string) {
@@ -338,10 +352,10 @@ func parsePortFromListen(listen string) int {
 }
 
 type UpdateContainerRequest struct {
-	CPU        int64        `json:"cpu"`
-	Memory     int64        `json:"memory"`
-	DiskMax    int64        `json:"diskMax"`
-	EnableSwap bool         `json:"enableSwap"`
+	CPU        int64             `json:"cpu"`
+	Memory     int64             `json:"memory"`
+	DiskMax    int64             `json:"diskMax"`
+	EnableSwap bool              `json:"enableSwap"`
 	Config     map[string]string `json:"config"`
 }
 
@@ -392,7 +406,7 @@ func UpdateContainer(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{
-		"operation": op.ID(),
+		"operation": getOperationID(op),
 		"message":   "container update initiated",
 	})
 }
@@ -407,7 +421,7 @@ func DeleteContainer(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{
-		"operation": op.ID(),
+		"operation": getOperationID(op),
 		"message":   "container deletion initiated",
 	})
 }
@@ -422,7 +436,7 @@ func StartContainer(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{
-		"operation": op.ID(),
+		"operation": getOperationID(op),
 		"message":   "container start initiated",
 	})
 }
@@ -437,7 +451,7 @@ func StopContainer(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{
-		"operation": op.ID(),
+		"operation": getOperationID(op),
 		"message":   "container stop initiated",
 	})
 }
@@ -452,7 +466,7 @@ func RestartContainer(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{
-		"operation": op.ID(),
+		"operation": getOperationID(op),
 		"message":   "container restart initiated",
 	})
 }

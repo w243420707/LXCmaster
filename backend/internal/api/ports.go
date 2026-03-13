@@ -18,7 +18,7 @@ type PortMapping struct {
 }
 
 type PortMappingsResponse struct {
-	Name    string        `json:"name"`
+	Name     string        `json:"name"`
 	Mappings []PortMapping `json:"mappings"`
 }
 
@@ -110,7 +110,7 @@ func AddPortMapping(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{
-		"operation": op.ID(),
+		"operation": getOperationID(op),
 		"message":   "port mapping added",
 	})
 }
@@ -147,7 +147,7 @@ func DeletePortMapping(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{
-		"operation": op.ID(),
+		"operation": getOperationID(op),
 		"message":   "port mapping deleted",
 	})
 }

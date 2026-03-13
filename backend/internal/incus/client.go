@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"time"
 
 	incus "github.com/lxc/incus/client"
 	"github.com/lxc/incus/shared/api"
@@ -100,11 +99,6 @@ func (c *Client) GetInstanceConsole(name string) (*http.Response, error) {
 	})
 }
 
-func (c *Client) WaitForOperation(opID string, timeout time.Duration) error {
-	_, err := c.client.WaitForOperation(opID)
-	return err
-}
-
-func (c *Client) GetOperationWait(opID string, timeout int) (api.Operation, string, error) {
+func (c *Client) GetOperationWait(opID string, timeout int) (*api.Operation, string, error) {
 	return c.client.GetOperationWait(opID, timeout)
 }
