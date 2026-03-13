@@ -6,9 +6,6 @@ frontend/node_modules/
 backend/lxcmaster
 frontend/dist/
 
-# Go
-backend/go.sum
-
 # IDE
 .idea/
 .vscode/
