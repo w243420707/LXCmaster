@@ -8,6 +8,12 @@
 wget -qO install.sh https://raw.githubusercontent.com/w243420707/LXCmaster/main/install.sh && bash install.sh
 ```
 
+**支持的系统：**
+- Ubuntu 22.04 (jammy)
+- Ubuntu 24.04 (noble)
+- Debian 11 (bullseye)
+- Debian 12 (bookworm)
+
 安装脚本会自动完成以下操作：
 1. 检测系统架构 (amd64/arm64)
 2. 安装并初始化 Incus

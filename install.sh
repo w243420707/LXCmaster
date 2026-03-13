@@ -126,9 +126,38 @@ install_incus() {
         apt-get install -y curl gnupg2
         
         if [[ "$OS_ID" == "ubuntu" ]]; then
-            INCUS_REPO="ubuntu"
+            case "$OS_CODENAME" in
+                focal)
+                    log_error "Ubuntu 20.04 (focal) 不被 Incus 官方支持"
+                    log_info "Incus 官方仓库支持的 Ubuntu 版本: 22.04 (jammy), 24.04 (noble)"
+                    log_info "请升级系统或使用 Ubuntu 22.04+ / Debian 11+"
+                    exit 1
+                    ;;
+                jammy)
+                    INCUS_CODENAME="jammy"
+                    ;;
+                noble)
+                    INCUS_CODENAME="noble"
+                    ;;
+                *)
+                    INCUS_CODENAME="jammy"
+                    log_warn "未测试的 Ubuntu 版本 $OS_CODENAME，尝试使用 jammy 仓库"
+                    ;;
+            esac
         else
-            INCUS_REPO="debian"
+            case "$OS_CODENAME" in
+                bullseye)
+                    INCUS_CODENAME="bullseye"
+                    ;;
+                bookworm)
+                    INCUS_CODENAME="bookworm"
+                    ;;
+                *)
+                    log_error "Debian $OS_CODENAME 不被 Incus 官方支持"
+                    log_info "Incus 官方仓库支持的 Debian 版本: 11 (bullseye), 12 (bookworm)"
+                    exit 1
+                    ;;
+            esac
         fi
         
         curl -fsSL "https://pkgs.zabbly.com/key.asc" | gpg --dearmor -o /usr/share/keyrings/zabbly.gpg
@@ -137,7 +166,7 @@ install_incus() {
 Enabled: yes
 Types: deb
 URIs: https://pkgs.zabbly.com/incus/stable
-Suites: ${OS_CODENAME}
+Suites: ${INCUS_CODENAME}
 Components: main
 Architectures: $(dpkg --print-architecture)
 Signed-By: /usr/share/keyrings/zabbly.gpg
