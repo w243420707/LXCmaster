@@ -216,6 +216,7 @@ func CreateContainer(c *gin.Context) {
 		}
 	}
 
+	// Process port mappings
 	for _, port := range req.PortMappings {
 		for _, ipVersion := range port.IPVersions {
 			for _, protocol := range port.Protocols {
@@ -224,10 +225,25 @@ func CreateContainer(c *gin.Context) {
 				if ipVersion == "v6" {
 					listenAddr = "[::]"
 				}
-				devices[deviceName] = map[string]string{
-					"type":    "proxy",
-					"listen":  fmt.Sprintf("%s:%s:%s", protocol, listenAddr, port.HostPort),
-					"connect": fmt.Sprintf("%s:127.0.0.1:%s", protocol, port.ContainerPort),
+				
+				// Check if it's a port range
+				hostStart, hostEnd, hostIsRange := parsePortRange(port.HostPort)
+				containerStart, containerEnd, containerIsRange := parsePortRange(port.ContainerPort)
+				
+				if hostIsRange && containerIsRange {
+					// Port range mapping
+					devices[deviceName] = map[string]string{
+						"type":    "proxy",
+						"listen":  fmt.Sprintf("%s:%s:%d-%d", protocol, listenAddr, hostStart, hostEnd),
+						"connect": fmt.Sprintf("%s:127.0.0.1:%d-%d", protocol, containerStart, containerEnd),
+					}
+				} else {
+					// Single port mapping
+					devices[deviceName] = map[string]string{
+						"type":    "proxy",
+						"listen":  fmt.Sprintf("%s:%s:%s", protocol, listenAddr, port.HostPort),
+						"connect": fmt.Sprintf("%s:127.0.0.1:%s", protocol, port.ContainerPort),
+					}
 				}
 				deviceIndex++
 			}
@@ -290,6 +306,26 @@ func CreateContainer(c *gin.Context) {
 		"message":   "container creation initiated",
 		"ssh_port":  req.SSHPort,
 	})
+}
+
+// parsePortRange parses a port string which can be a single port or a range (e.g., "80" or "30001-39999")
+func parsePortRange(portStr string) (start, end int, isRange bool) {
+	portStr = strings.TrimSpace(portStr)
+	
+	if strings.Contains(portStr, "-") {
+		parts := strings.Split(portStr, "-")
+		if len(parts) == 2 {
+			start, _ = strconv.Atoi(strings.TrimSpace(parts[0]))
+			end, _ = strconv.Atoi(strings.TrimSpace(parts[1]))
+			if start > 0 && end > 0 && start <= end {
+				return start, end, true
+			}
+		}
+	}
+	
+	// Single port
+	port, _ := strconv.Atoi(portStr)
+	return port, port, false
 }
 
 func getOperationID(op interface{}) string {
