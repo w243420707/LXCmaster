@@ -85,22 +85,30 @@ detect_arch() {
 }
 
 get_port() {
-    echo ""
     log_step "配置服务端口..."
-    echo -e "${YELLOW}请输入服务监听端口 (直接回车使用默认端口 $DEFAULT_PORT):${NC}"
-    read -r PORT_INPUT
     
-    if [[ -z "$PORT_INPUT" ]]; then
-        PORT=$DEFAULT_PORT
-        log_info "使用默认端口: $PORT"
-    else
-        if [[ "$PORT_INPUT" =~ ^[0-9]+$ ]] && [[ "$PORT_INPUT" -ge 1 ]] && [[ "$PORT_INPUT" -le 65535 ]]; then
-            PORT=$PORT_INPUT
-            log_info "使用端口: $PORT"
-        else
-            log_error "无效的端口号，使用默认端口: $DEFAULT_PORT"
+    if [[ -n "$LXCMASTER_PORT" ]]; then
+        PORT=$LXCMASTER_PORT
+        log_info "使用环境变量端口: $PORT"
+    elif [[ -t 0 ]]; then
+        echo -e "${YELLOW}请输入服务监听端口 (直接回车使用默认端口 $DEFAULT_PORT):${NC}"
+        read -r PORT_INPUT
+        
+        if [[ -z "$PORT_INPUT" ]]; then
             PORT=$DEFAULT_PORT
+            log_info "使用默认端口: $PORT"
+        else
+            if [[ "$PORT_INPUT" =~ ^[0-9]+$ ]] && [[ "$PORT_INPUT" -ge 1 ]] && [[ "$PORT_INPUT" -le 65535 ]]; then
+                PORT=$PORT_INPUT
+                log_info "使用端口: $PORT"
+            else
+                log_error "无效的端口号，使用默认端口: $DEFAULT_PORT"
+                PORT=$DEFAULT_PORT
+            fi
         fi
+    else
+        PORT=$DEFAULT_PORT
+        log_info "非交互模式，使用默认端口: $PORT"
     fi
 }
 
