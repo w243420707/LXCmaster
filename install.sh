@@ -138,9 +138,9 @@ detect_incus() {
 install_dependencies() {
     log_step "安装依赖..."
     
-    apt-get update -qq
+    apt-get update
     
-    apt-get install -y -qq \
+    apt-get install -y \
         curl \
         wget \
         git \
@@ -232,15 +232,16 @@ install_incus() {
             local ubuntu_version=$(echo "$OS_VERSION_ID" | cut -d. -f1)
             
             if [[ "$ubuntu_version" -ge "24" ]]; then
-                apt-get install -y -qq incus
+                apt-get install -y incus
             elif [[ "$ubuntu_version" -ge "22" ]]; then
-                add-apt-repository ppa:ubuntu-lxc/incus -y &>/dev/null
-                apt-get update -qq
-                apt-get install -y -qq incus
+                log_info "添加 Incus PPA..."
+                DEBIAN_FRONTEND=noninteractive add-apt-repository ppa:ubuntu-lxc/incus -y
+                apt-get update
+                apt-get install -y incus
             fi
         elif [[ "$OS_ID" == "debian" ]]; then
             if [[ "$OS_VERSION_ID" == "12" ]]; then
-                apt-get install -y -qq incus
+                apt-get install -y incus
             fi
         fi
         
@@ -258,7 +259,7 @@ install_incus() {
     
     log_warn "使用 Snap 安装 LXD"
     if ! command -v snap &>/dev/null; then
-        apt-get install -y -qq snapd
+        apt-get install -y snapd
     fi
     snap install lxd --classic
     
