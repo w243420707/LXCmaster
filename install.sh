@@ -205,42 +205,64 @@ install_nodejs() {
 }
 
 install_incus() {
-    if command -v incus &>/dev/null || command -v lxc &>/dev/null; then
-        log_info "Incus/LXD 已安装"
-        return 0
-    fi
+    local should_install_incus=false
     
-    log_step "安装 Incus..."
-    
+    # 检查系统是否支持 Incus
     if [[ "$OS_ID" == "ubuntu" ]]; then
         local ubuntu_version=$(echo "$OS_VERSION_ID" | cut -d. -f1)
-        
-        if [[ "$ubuntu_version" -ge "24" ]]; then
-            apt-get install -y -qq incus
-        elif [[ "$ubuntu_version" -ge "22" ]]; then
-            add-apt-repository ppa:ubuntu-lxc/incus -y &>/dev/null
-            apt-get update -qq
-            apt-get install -y -qq incus
-        else
-            log_warn "Ubuntu ${OS_VERSION_ID} 使用 Snap 安装 LXD"
-            if ! command -v snap &>/dev/null; then
-                apt-get install -y -qq snapd
-            fi
-            snap install lxd --classic
+        if [[ "$ubuntu_version" -ge "22" ]]; then
+            should_install_incus=true
         fi
     elif [[ "$OS_ID" == "debian" ]]; then
         if [[ "$OS_VERSION_ID" == "12" ]]; then
-            apt-get install -y -qq incus
-        else
-            log_warn "Debian ${OS_VERSION_ID} 使用 Snap 安装 LXD"
-            if ! command -v snap &>/dev/null; then
-                apt-get install -y -qq snapd
-            fi
-            snap install lxd --classic
+            should_install_incus=true
         fi
     fi
     
-    log_info "Incus/LXD 安装完成"
+    # 如果系统支持 Incus，尝试安装或已安装则继续使用
+    if [[ "$should_install_incus" == "true" ]]; then
+        if command -v incus &>/dev/null; then
+            log_info "Incus 已安装"
+            return 0
+        fi
+        
+        log_step "安装 Incus..."
+        
+        if [[ "$OS_ID" == "ubuntu" ]]; then
+            local ubuntu_version=$(echo "$OS_VERSION_ID" | cut -d. -f1)
+            
+            if [[ "$ubuntu_version" -ge "24" ]]; then
+                apt-get install -y -qq incus
+            elif [[ "$ubuntu_version" -ge "22" ]]; then
+                add-apt-repository ppa:ubuntu-lxc/incus -y &>/dev/null
+                apt-get update -qq
+                apt-get install -y -qq incus
+            fi
+        elif [[ "$OS_ID" == "debian" ]]; then
+            if [[ "$OS_VERSION_ID" == "12" ]]; then
+                apt-get install -y -qq incus
+            fi
+        fi
+        
+        log_info "Incus 安装完成"
+        return 0
+    fi
+    
+    # 旧系统使用 LXD
+    if command -v lxc &>/dev/null; then
+        log_info "LXD 已安装"
+        return 0
+    fi
+    
+    log_step "安装 LXD..."
+    
+    log_warn "使用 Snap 安装 LXD"
+    if ! command -v snap &>/dev/null; then
+        apt-get install -y -qq snapd
+    fi
+    snap install lxd --classic
+    
+    log_info "LXD 安装完成"
 }
 
 init_incus() {
