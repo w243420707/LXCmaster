@@ -417,13 +417,15 @@ function Containers() {
         </div>
       )}
 
-      <div className="bg-gray-800 rounded-lg border border-gray-700">
-        <table className="w-full">
+      <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-x-auto">
+        <table className="w-full min-w-[900px]">
           <thead className="border-b border-gray-700">
             <tr>
               <th className="text-left p-4 text-gray-400 font-medium">名称</th>
               <th className="text-left p-4 text-gray-400 font-medium">状态</th>
               <th className="text-left p-4 text-gray-400 font-medium">IP 地址</th>
+              <th className="text-left p-4 text-gray-400 font-medium">SSH 端口</th>
+              <th className="text-left p-4 text-gray-400 font-medium">SSH 密码</th>
               <th className="text-left p-4 text-gray-400 font-medium">CPU</th>
               <th className="text-left p-4 text-gray-400 font-medium">内存</th>
               <th className="text-left p-4 text-gray-400 font-medium">操作</th>
@@ -432,7 +434,7 @@ function Containers() {
           <tbody className="divide-y divide-gray-700">
             {containers.length === 0 ? (
               <tr>
-                <td colSpan={6} className="p-4 text-center text-gray-500">
+                <td colSpan={8} className="p-4 text-center text-gray-500">
                   暂无容器
                 </td>
               </tr>
@@ -466,6 +468,16 @@ function Containers() {
                     </span>
                   </td>
                   <td className="p-4 text-gray-300">{container.ip_address || '-'}</td>
+                  <td className="p-4 text-gray-300">{container.ssh_port || '-'}</td>
+                  <td className="p-4">
+                    {container.root_password ? (
+                      <code className="bg-gray-700 px-2 py-1 rounded text-sm text-green-400">
+                        {container.root_password}
+                      </code>
+                    ) : (
+                      <span className="text-gray-500">-</span>
+                    )}
+                  </td>
                   <td className="p-4 text-gray-300">{container.cpu || '-'} 核</td>
                   <td className="p-4 text-gray-300">{container.memory || '-'} MB</td>
                   <td className="p-4">

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	incusapi "github.com/lxc/incus/shared/api"
@@ -18,6 +19,8 @@ type ContainerResponse struct {
 	Memory      int64             `json:"memory"`
 	DiskMax     int64             `json:"disk_max"`
 	SwapEnabled bool              `json:"swap_enabled"`
+	SSHPort     int               `json:"ssh_port"`
+	RootPassword string           `json:"root_password"`
 	Config      map[string]string `json:"config"`
 }
 
@@ -47,6 +50,21 @@ func ListContainers(c *gin.Context) {
 		}
 		if swap, ok := inst.Config["limits.memory.swap"]; ok {
 			resp.SwapEnabled = swap == "true"
+		}
+		if sshPort, ok := inst.Config["user.ssh_port"]; ok {
+			resp.SSHPort = int(parseInt64(sshPort))
+		}
+		if pwd, ok := inst.Config["user.root_password"]; ok {
+			resp.RootPassword = pwd
+		}
+
+		if ssh, ok := inst.Devices["ssh"]; ok {
+			if listen, ok := ssh["listen"]; ok {
+				port := parsePortFromListen(listen)
+				if port > 0 {
+					resp.SSHPort = port
+				}
+			}
 		}
 
 		state, _, err := incus.DefaultClient.GetInstanceState(inst.Name)
@@ -159,6 +177,12 @@ func CreateContainer(c *gin.Context) {
 	if req.EnableSwap {
 		config["limits.memory.swap"] = "true"
 		config["limits.memory.swap.priority"] = "1"
+	}
+	if req.EnableSSH && req.SSHPort > 0 {
+		config["user.ssh_port"] = strconv.Itoa(req.SSHPort)
+		if req.RootPassword != "" {
+			config["user.root_password"] = req.RootPassword
+		}
 	}
 
 	profiles := req.Profiles
@@ -283,6 +307,16 @@ func setupSSH(name, password string) {
 		}
 		_, _ = incus.DefaultClient.ExecInstance(name, execReq)
 	}
+
+	inst, etag, err := incus.DefaultClient.GetInstance(name)
+	if err == nil {
+		inst.Config["user.root_password"] = password
+		updateReq := incusapi.InstancePut{
+			Config:  inst.Config,
+			Devices: inst.Devices,
+		}
+		_, _ = incus.DefaultClient.UpdateInstance(name, updateReq, etag)
+	}
 }
 
 func generateRandomPassword() string {
@@ -292,6 +326,15 @@ func generateRandomPassword() string {
 		b[i] = charset[i%len(charset)]
 	}
 	return string(b)
+}
+
+func parsePortFromListen(listen string) int {
+	parts := strings.Split(listen, ":")
+	if len(parts) >= 1 {
+		port, _ := strconv.Atoi(parts[len(parts)-1])
+		return port
+	}
+	return 0
 }
 
 type UpdateContainerRequest struct {
