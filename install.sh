@@ -210,7 +210,7 @@ install_incus() {
     # 检查系统是否支持 Incus
     if [[ "$OS_ID" == "ubuntu" ]]; then
         local ubuntu_version=$(echo "$OS_VERSION_ID" | cut -d. -f1)
-        if [[ "$ubuntu_version" -ge "22" ]]; then
+        if [[ "$ubuntu_version" -ge "24" ]]; then
             should_install_incus=true
         fi
     elif [[ "$OS_ID" == "debian" ]]; then
@@ -233,11 +233,6 @@ install_incus() {
             
             if [[ "$ubuntu_version" -ge "24" ]]; then
                 apt-get install -y incus
-            elif [[ "$ubuntu_version" -ge "22" ]]; then
-                log_info "添加 Incus PPA..."
-                DEBIAN_FRONTEND=noninteractive add-apt-repository ppa:ubuntu-lxc/incus -y
-                apt-get update
-                apt-get install -y incus
             fi
         elif [[ "$OS_ID" == "debian" ]]; then
             if [[ "$OS_VERSION_ID" == "12" ]]; then
@@ -249,7 +244,7 @@ install_incus() {
         return 0
     fi
     
-    # 旧系统使用 LXD
+    # 其他系统使用 LXD
     if command -v lxc &>/dev/null; then
         log_info "LXD 已安装"
         return 0
