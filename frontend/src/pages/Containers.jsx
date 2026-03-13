@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 
 const PRESET_IMAGES = [
@@ -8,12 +8,14 @@ const PRESET_IMAGES = [
 ]
 
 function Containers() {
+  const navigate = useNavigate()
   const [containers, setContainers] = useState([])
   const [images, setImages] = useState([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [creating, setCreating] = useState(false)
   const [createProgress, setCreateProgress] = useState('')
+  const [creatingContainer, setCreatingContainer] = useState(null)
   const [createForm, setCreateForm] = useState({
     name: '',
     image: 'alpine/3.18',
@@ -51,44 +53,36 @@ function Containers() {
     }
   }
 
-  const waitForContainer = async (name, timeout = 120000) => {
-    const startTime = Date.now()
-    while (Date.now() - startTime < timeout) {
-      try {
-        const container = await api.containers.get(name)
-        if (container.container?.status === 'Running') {
-          return true
-        }
-      } catch (e) {
-        // Container might not exist yet
-      }
-      await new Promise(r => setTimeout(r, 2000))
-    }
-    return false
-  }
-
   const handleCreate = async (e) => {
     e.preventDefault()
     setCreating(true)
     setCreateProgress('正在创建容器...')
+    setCreatingContainer({
+      name: createForm.name,
+      progress: 10,
+      status: '创建中',
+    })
     
     try {
       await api.containers.create(createForm)
       setCreateProgress('容器创建中，请稍候...')
+      setCreatingContainer({ name: createForm.name, progress: 30, status: '创建中' })
       
       // Wait for container to be created
       let attempts = 0
-      const maxAttempts = 30
+      const maxAttempts = 60
       while (attempts < maxAttempts) {
         try {
           const containers = await api.containers.list()
           const newContainer = containers.find(c => c.name === createForm.name)
           if (newContainer) {
+            setCreatingContainer({ name: createForm.name, progress: 70, status: '配置中' })
             if (createForm.enableSSH) {
               setCreateProgress('容器已创建，正在配置 SSH...')
               // Wait for SSH setup (container needs to start)
-              await new Promise(r => setTimeout(r, 10000))
+              await new Promise(r => setTimeout(r, 15000))
             }
+            setCreatingContainer({ name: createForm.name, progress: 100, status: '完成' })
             break
           }
         } catch (e) {
@@ -96,6 +90,8 @@ function Containers() {
         }
         await new Promise(r => setTimeout(r, 2000))
         attempts++
+        const progress = Math.min(30 + (attempts / maxAttempts) * 40, 70)
+        setCreatingContainer({ name: createForm.name, progress: progress, status: '创建中' })
         setCreateProgress(`正在等待容器就绪... (${attempts}/${maxAttempts})`)
       }
       
@@ -113,9 +109,18 @@ function Containers() {
         rootPassword: '',
         portMappings: [],
       })
-      loadData()
+      
+      // Reload container list
+      await loadData()
+      
+      // Clear creating container and navigate after showing completion
+      setTimeout(() => {
+        setCreatingContainer(null)
+        navigate('/')
+      }, 1000)
     } catch (err) {
       setCreateProgress('创建失败: ' + err.message)
+      setCreatingContainer(null)
     } finally {
       setCreating(false)
       setTimeout(() => setCreateProgress(''), 3000)
@@ -172,6 +177,8 @@ function Containers() {
     const protoLabels = port.protocols.join('/').toUpperCase()
     return `${ipLabels} ${protoLabels}: ${port.hostPort} → ${port.containerPort}`
   }
+
+  const isCreating = (name) => creatingContainer && creatingContainer.name === name
 
   if (loading) {
     return (
@@ -516,7 +523,36 @@ function Containers() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-700">
-            {containers.length === 0 ? (
+            {creatingContainer && (
+              <tr className="bg-gray-750">
+                <td className="p-4">
+                  <span className="font-medium">{creatingContainer.name}</span>
+                </td>
+                <td className="p-4">
+                  <div className="flex flex-col gap-2">
+                    <span className="text-yellow-400 flex items-center gap-2">
+                      <div className="animate-pulse w-2 h-2 rounded-full bg-yellow-400"></div>
+                      {creatingContainer.status}
+                    </span>
+                    <div className="w-32 h-2 bg-gray-600 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-blue-500 transition-all duration-300"
+                        style={{ width: `${creatingContainer.progress}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                </td>
+                <td className="p-4 text-gray-500">-</td>
+                <td className="p-4 text-gray-500">-</td>
+                <td className="p-4 text-gray-500">-</td>
+                <td className="p-4 text-gray-500">-</td>
+                <td className="p-4 text-gray-500">-</td>
+                <td className="p-4">
+                  <span className="text-gray-500">处理中...</span>
+                </td>
+              </tr>
+            )}
+            {containers.length === 0 && !creatingContainer ? (
               <tr>
                 <td colSpan={8} className="p-4 text-center text-gray-500">
                   暂无容器
@@ -524,96 +560,98 @@ function Containers() {
               </tr>
             ) : (
               containers.map((container) => (
-                <tr key={container.name} className="hover:bg-gray-750">
-                  <td className="p-4">
-                    <Link
-                      to={`/containers/${container.name}`}
-                      className="font-medium hover:text-blue-400"
-                    >
-                      {container.name}
-                    </Link>
-                  </td>
-                  <td className="p-4">
-                    <span
-                      className={`inline-flex items-center gap-1 ${
-                        container.status === 'Running'
-                          ? 'text-green-400'
-                          : 'text-red-400'
-                      }`}
-                    >
-                      <span
-                        className={`w-2 h-2 rounded-full ${
-                          container.status === 'Running'
-                            ? 'bg-green-400'
-                            : 'bg-red-400'
-                        }`}
-                      />
-                      {container.status}
-                    </span>
-                  </td>
-                  <td className="p-4 text-gray-300">{container.ip_address || '-'}</td>
-                  <td className="p-4 text-gray-300">{container.ssh_port || '-'}</td>
-                  <td className="p-4">
-                    {container.root_password ? (
-                      <code className="bg-gray-700 px-2 py-1 rounded text-sm text-green-400">
-                        {container.root_password}
-                      </code>
-                    ) : (
-                      <span className="text-gray-500">-</span>
-                    )}
-                  </td>
-                  <td className="p-4 text-gray-300">{container.cpu || '-'} 核</td>
-                  <td className="p-4 text-gray-300">{container.memory || '-'} MB</td>
-                  <td className="p-4">
-                    <div className="flex gap-2">
-                      {container.status === 'Running' ? (
-                        <>
-                          <button
-                            onClick={() => handleAction(container.name, 'stop')}
-                            className="text-yellow-400 hover:text-yellow-300"
-                          >
-                            停止
-                          </button>
-                          <button
-                            onClick={() => handleAction(container.name, 'restart')}
-                            className="text-blue-400 hover:text-blue-300"
-                          >
-                            重启
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          onClick={() => handleAction(container.name, 'start')}
-                          className="text-green-400 hover:text-green-300"
-                        >
-                          启动
-                        </button>
-                      )}
+                !isCreating(container.name) && (
+                  <tr key={container.name} className="hover:bg-gray-750">
+                    <td className="p-4">
                       <Link
                         to={`/containers/${container.name}`}
-                        className="text-gray-400 hover:text-gray-300"
+                        className="font-medium hover:text-blue-400"
                       >
-                        详情
+                        {container.name}
                       </Link>
-                      <Link
-                        to={`/terminal/${container.name}`}
-                        className="text-purple-400 hover:text-purple-300"
+                    </td>
+                    <td className="p-4">
+                      <span
+                        className={`inline-flex items-center gap-1 ${
+                          container.status === 'Running'
+                            ? 'text-green-400'
+                            : 'text-red-400'
+                        }`}
                       >
-                        终端
-                      </Link>
-                      <button
-                        onClick={() => {
-                          if (confirm(`确定要删除容器 ${container.name} 吗？`)) {
-                            handleAction(container.name, 'delete')
-                          }
-                        }}
-                        className="text-red-400 hover:text-red-300"
-                      >
-                        删除
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+                        <span
+                          className={`w-2 h-2 rounded-full ${
+                            container.status === 'Running'
+                              ? 'bg-green-400'
+                              : 'bg-red-400'
+                          }`}
+                        />
+                        {container.status}
+                      </span>
+                    </td>
+                    <td className="p-4 text-gray-300">{container.ip_address || '-'}</td>
+                    <td className="p-4 text-gray-300">{container.ssh_port || '-'}</td>
+                    <td className="p-4">
+                      {container.root_password ? (
+                        <code className="bg-gray-700 px-2 py-1 rounded text-sm text-green-400">
+                          {container.root_password}
+                        </code>
+                      ) : (
+                        <span className="text-gray-500">-</span>
+                      )}
+                    </td>
+                    <td className="p-4 text-gray-300">{container.cpu || '-'} 核</td>
+                    <td className="p-4 text-gray-300">{container.memory || '-'} MB</td>
+                    <td className="p-4">
+                      <div className="flex gap-2">
+                        {container.status === 'Running' ? (
+                          <>
+                            <button
+                              onClick={() => handleAction(container.name, 'stop')}
+                              className="text-yellow-400 hover:text-yellow-300"
+                            >
+                              停止
+                            </button>
+                            <button
+                              onClick={() => handleAction(container.name, 'restart')}
+                              className="text-blue-400 hover:text-blue-300"
+                            >
+                              重启
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => handleAction(container.name, 'start')}
+                            className="text-green-400 hover:text-green-300"
+                          >
+                            启动
+                          </button>
+                        )}
+                        <Link
+                          to={`/containers/${container.name}`}
+                          className="text-gray-400 hover:text-gray-300"
+                        >
+                          详情
+                        </Link>
+                        <Link
+                          to={`/terminal/${container.name}`}
+                          className="text-purple-400 hover:text-purple-300"
+                        >
+                          终端
+                        </Link>
+                        <button
+                          onClick={() => {
+                            if (confirm(`确定要删除容器 ${container.name} 吗？`)) {
+                              handleAction(container.name, 'delete')
+                            }
+                          }}
+                          className="text-red-400 hover:text-red-300"
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
               ))
             )}
           </tbody>
