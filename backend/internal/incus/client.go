@@ -1,7 +1,6 @@
 package incus
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -90,11 +89,7 @@ func (c *Client) ListStoragePools() ([]api.StoragePool, error) {
 }
 
 func (c *Client) ExecInstance(name string, req api.InstanceExecPost) (incus.Operation, error) {
-	op, err := c.client.ExecInstance(name, req, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	return op, nil
+	return c.client.ExecInstance(name, req, nil)
 }
 
 func (c *Client) GetInstanceConsole(name string) (*http.Response, error) {
@@ -102,15 +97,14 @@ func (c *Client) GetInstanceConsole(name string) (*http.Response, error) {
 	return c.client.DoHTTP(&http.Request{
 		Method: "GET",
 		URL:    &url.URL{Path: u},
-	}, context.Background())
+	})
 }
 
 func (c *Client) WaitForOperation(opID string, timeout time.Duration) error {
-	op, _, err := c.client.GetOperation(opID)
-	if err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	return op.WaitContext(ctx)
+	_, err := c.client.WaitForOperation(opID)
+	return err
+}
+
+func (c *Client) GetOperationWait(opID string, timeout int) (api.Operation, string, error) {
+	return c.client.GetOperationWait(opID, timeout)
 }
