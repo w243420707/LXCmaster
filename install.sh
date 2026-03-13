@@ -221,8 +221,7 @@ networks:
   type: ""
   project: default
 storage_pools:
-- config:
-    size: auto
+- config: {}
   description: ""
   name: default
   driver: dir
