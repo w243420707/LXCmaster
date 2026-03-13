@@ -1,0 +1,459 @@
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { api } from '../lib/api'
+
+const PRESET_IMAGES = [
+  { value: 'alpine/3.18', label: 'Alpine 3.18 (轻量推荐)', os: 'Alpine' },
+  { value: 'debian/11', label: 'Debian 11 (稳定)', os: 'Debian' },
+]
+
+function Containers() {
+  const [containers, setContainers] = useState([])
+  const [images, setImages] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showCreate, setShowCreate] = useState(false)
+  const [createForm, setCreateForm] = useState({
+    name: '',
+    image: 'alpine/3.18',
+    cpu: 1,
+    memory: 512,
+    diskMax: 10,
+    enableSwap: true,
+    portMappings: [],
+  })
+  const [newPort, setNewPort] = useState({
+    hostPort: '',
+    containerPort: '',
+    protocols: ['tcp', 'udp'],
+    ipVersions: ['v4', 'v6'],
+  })
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  const loadData = async () => {
+    setLoading(true)
+    try {
+      const [containersData, imagesData] = await Promise.all([
+        api.containers.list(),
+        api.images.list(),
+      ])
+      setContainers(containersData)
+      setImages(imagesData)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleCreate = async (e) => {
+    e.preventDefault()
+    try {
+      await api.containers.create(createForm)
+      setShowCreate(false)
+      setCreateForm({
+        name: '',
+        image: 'alpine/3.18',
+        cpu: 1,
+        memory: 512,
+        diskMax: 10,
+        enableSwap: true,
+        portMappings: [],
+      })
+      loadData()
+    } catch (err) {
+      alert('创建失败: ' + err.message)
+    }
+  }
+
+  const handleAction = async (name, action) => {
+    try {
+      await api.containers[action](name)
+      loadData()
+    } catch (err) {
+      alert('操作失败: ' + err.message)
+    }
+  }
+
+  const toggleProtocol = (protocol) => {
+    const protocols = newPort.protocols.includes(protocol)
+      ? newPort.protocols.filter(p => p !== protocol)
+      : [...newPort.protocols, protocol]
+    setNewPort({ ...newPort, protocols })
+  }
+
+  const toggleIpVersion = (version) => {
+    const ipVersions = newPort.ipVersions.includes(version)
+      ? newPort.ipVersions.filter(v => v !== version)
+      : [...newPort.ipVersions, version]
+    setNewPort({ ...newPort, ipVersions })
+  }
+
+  const addPortMapping = () => {
+    if (newPort.hostPort && newPort.containerPort && newPort.protocols.length > 0 && newPort.ipVersions.length > 0) {
+      setCreateForm({
+        ...createForm,
+        portMappings: [...createForm.portMappings, { ...newPort }]
+      })
+      setNewPort({
+        hostPort: '',
+        containerPort: '',
+        protocols: ['tcp', 'udp'],
+        ipVersions: ['v4', 'v6'],
+      })
+    }
+  }
+
+  const removePortMapping = (index) => {
+    setCreateForm({
+      ...createForm,
+      portMappings: createForm.portMappings.filter((_, i) => i !== index)
+    })
+  }
+
+  const formatPortMapping = (port) => {
+    const ipLabels = port.ipVersions.map(v => v === 'v4' ? 'IPv4' : 'IPv6').join('+')
+    const protoLabels = port.protocols.join('/').toUpperCase()
+    return `${ipLabels} ${protoLabels}: ${port.hostPort} → ${port.containerPort}`
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-gray-400">加载中...</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold">容器管理</h2>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg"
+        >
+          创建容器
+        </button>
+      </div>
+
+      {showCreate && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 overflow-y-auto py-8">
+          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-lg border border-gray-700 my-auto">
+            <h3 className="text-xl font-bold mb-4">创建容器</h3>
+            <form onSubmit={handleCreate} className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">容器名称</label>
+                <input
+                  type="text"
+                  value={createForm.name}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, name: e.target.value })
+                  }
+                  className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
+                  placeholder="例如: my-container"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">镜像</label>
+                <select
+                  value={createForm.image}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, image: e.target.value })
+                  }
+                  className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
+                  required
+                >
+                  {PRESET_IMAGES.map((img) => (
+                    <option key={img.value} value={img.value}>
+                      {img.label}
+                    </option>
+                  ))}
+                  {images.length > 0 && (
+                    <optgroup label="本地镜像">
+                      {images.map((img) => (
+                        <option key={img.fingerprint} value={img.alias || img.fingerprint}>
+                          {img.alias || img.fingerprint.slice(0, 12)} ({img.os})
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">CPU 核心</label>
+                  <input
+                    type="number"
+                    value={createForm.cpu}
+                    onChange={(e) =>
+                      setCreateForm({ ...createForm, cpu: parseInt(e.target.value) || 1 })
+                    }
+                    className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
+                    min="1"
+                    max="64"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">内存 (MB)</label>
+                  <input
+                    type="number"
+                    value={createForm.memory}
+                    onChange={(e) =>
+                      setCreateForm({ ...createForm, memory: parseInt(e.target.value) || 512 })
+                    }
+                    className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
+                    min="64"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">最大存储 (GB)</label>
+                  <input
+                    type="number"
+                    value={createForm.diskMax}
+                    onChange={(e) =>
+                      setCreateForm({ ...createForm, diskMax: parseInt(e.target.value) || 10 })
+                    }
+                    className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
+                    min="1"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">共享宿主机存储，限制最大使用量</p>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Swap 支持</label>
+                  <div className="flex items-center h-10">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={createForm.enableSwap}
+                        onChange={(e) =>
+                          setCreateForm({ ...createForm, enableSwap: e.target.checked })
+                        }
+                        className="w-4 h-4 rounded"
+                      />
+                      <span className="text-sm text-gray-300">
+                        启用 (内存不足时使用宿主机Swap)
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">
+                  端口映射
+                  <span className="text-xs text-gray-500 ml-2">(可选，支持端口范围如 80-100)</span>
+                </label>
+                <div className="space-y-2">
+                  {createForm.portMappings.map((port, index) => (
+                    <div key={index} className="flex items-center gap-2 bg-gray-700 rounded px-3 py-2">
+                      <span className="text-sm text-gray-300 flex-1">
+                        {formatPortMapping(port)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removePortMapping(index)}
+                        className="text-red-400 hover:text-red-300 text-sm"
+                      >
+                        删除
+                      </button>
+                    </div>
+                  ))}
+                  <div className="space-y-2">
+                    <div className="flex gap-4">
+                      <div className="flex-1">
+                        <label className="block text-xs text-gray-500 mb-1">IP 版本</label>
+                        <div className="flex gap-2">
+                          <label className="flex items-center gap-1 cursor-pointer bg-gray-700 px-2 py-1 rounded text-sm">
+                            <input
+                              type="checkbox"
+                              checked={newPort.ipVersions.includes('v4')}
+                              onChange={() => toggleIpVersion('v4')}
+                              className="w-3 h-3"
+                            />
+                            IPv4
+                          </label>
+                          <label className="flex items-center gap-1 cursor-pointer bg-gray-700 px-2 py-1 rounded text-sm">
+                            <input
+                              type="checkbox"
+                              checked={newPort.ipVersions.includes('v6')}
+                              onChange={() => toggleIpVersion('v6')}
+                              className="w-3 h-3"
+                            />
+                            IPv6
+                          </label>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-xs text-gray-500 mb-1">协议</label>
+                        <div className="flex gap-2">
+                          <label className="flex items-center gap-1 cursor-pointer bg-gray-700 px-2 py-1 rounded text-sm">
+                            <input
+                              type="checkbox"
+                              checked={newPort.protocols.includes('tcp')}
+                              onChange={() => toggleProtocol('tcp')}
+                              className="w-3 h-3"
+                            />
+                            TCP
+                          </label>
+                          <label className="flex items-center gap-1 cursor-pointer bg-gray-700 px-2 py-1 rounded text-sm">
+                            <input
+                              type="checkbox"
+                              checked={newPort.protocols.includes('udp')}
+                              onChange={() => toggleProtocol('udp')}
+                              className="w-3 h-3"
+                            />
+                            UDP
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <input
+                        type="text"
+                        value={newPort.hostPort}
+                        onChange={(e) => setNewPort({ ...newPort, hostPort: e.target.value })}
+                        placeholder="宿主端口 (如 80-100)"
+                        className="bg-gray-700 border border-gray-600 rounded px-2 py-2 text-sm"
+                      />
+                      <input
+                        type="text"
+                        value={newPort.containerPort}
+                        onChange={(e) => setNewPort({ ...newPort, containerPort: e.target.value })}
+                        placeholder="容器端口 (如 80-100)"
+                        className="bg-gray-700 border border-gray-600 rounded px-2 py-2 text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={addPortMapping}
+                        disabled={!newPort.hostPort || !newPort.containerPort || newPort.protocols.length === 0 || newPort.ipVersions.length === 0}
+                        className="bg-gray-600 hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed px-3 py-2 rounded text-sm"
+                      >
+                        添加
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-2 justify-end pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowCreate(false)}
+                  className="px-4 py-2 rounded border border-gray-600 hover:bg-gray-700"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded"
+                >
+                  创建
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-gray-800 rounded-lg border border-gray-700">
+        <table className="w-full">
+          <thead className="border-b border-gray-700">
+            <tr>
+              <th className="text-left p-4 text-gray-400 font-medium">名称</th>
+              <th className="text-left p-4 text-gray-400 font-medium">状态</th>
+              <th className="text-left p-4 text-gray-400 font-medium">IP 地址</th>
+              <th className="text-left p-4 text-gray-400 font-medium">CPU</th>
+              <th className="text-left p-4 text-gray-400 font-medium">内存</th>
+              <th className="text-left p-4 text-gray-400 font-medium">操作</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-700">
+            {containers.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="p-4 text-center text-gray-500">
+                  暂无容器
+                </td>
+              </tr>
+            ) : (
+              containers.map((container) => (
+                <tr key={container.name} className="hover:bg-gray-750">
+                  <td className="p-4">
+                    <Link
+                      to={`/containers/${container.name}`}
+                      className="font-medium hover:text-blue-400"
+                    >
+                      {container.name}
+                    </Link>
+                  </td>
+                  <td className="p-4">
+                    <span
+                      className={`inline-flex items-center gap-1 ${
+                        container.status === 'Running'
+                          ? 'text-green-400'
+                          : 'text-red-400'
+                      }`}
+                    >
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          container.status === 'Running'
+                            ? 'bg-green-400'
+                            : 'bg-red-400'
+                        }`}
+                      />
+                      {container.status}
+                    </span>
+                  </td>
+                  <td className="p-4 text-gray-300">{container.ip_address || '-'}</td>
+                  <td className="p-4 text-gray-300">{container.cpu || '-'} 核</td>
+                  <td className="p-4 text-gray-300">{container.memory || '-'} MB</td>
+                  <td className="p-4">
+                    <div className="flex gap-2">
+                      {container.status === 'Running' ? (
+                        <>
+                          <button
+                            onClick={() => handleAction(container.name, 'stop')}
+                            className="text-yellow-400 hover:text-yellow-300"
+                          >
+                            停止
+                          </button>
+                          <button
+                            onClick={() => handleAction(container.name, 'restart')}
+                            className="text-blue-400 hover:text-blue-300"
+                          >
+                            重启
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => handleAction(container.name, 'start')}
+                          className="text-green-400 hover:text-green-300"
+                        >
+                          启动
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleAction(container.name, 'delete')}
+                        className="text-red-400 hover:text-red-300"
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+export default Containers

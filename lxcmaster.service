@@ -1,0 +1,18 @@
+[Unit]
+Description=LXCmaster - Incus Container Management Panel
+After=network.target incus.service
+Requires=incus.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/lxcmaster
+ExecStart=/opt/lxcmaster/lxcmaster
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
