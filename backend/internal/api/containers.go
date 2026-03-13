@@ -263,12 +263,14 @@ func CreateContainer(c *gin.Context) {
 		imageAlias = "alpine/3.18"
 	}
 
+	source := incusapi.InstanceSource{
+		Type:  "image",
+		Alias: imageAlias,
+	}
+
 	createReq := incusapi.InstancesPost{
 		Name: req.Name,
-		Source: incusapi.InstanceSource{
-			Type:  "image",
-			Alias: imageAlias,
-		},
+		Source: source,
 		Type: incusapi.InstanceTypeContainer,
 		InstancePut: incusapi.InstancePut{
 			Profiles: profiles,
@@ -279,7 +281,7 @@ func CreateContainer(c *gin.Context) {
 
 	op, err := incus.DefaultClient.CreateInstance(createReq)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建容器失败: %v，请确保镜像 '%s' 已下载", err, imageAlias)})
 		return
 	}
 

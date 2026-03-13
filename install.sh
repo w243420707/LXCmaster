@@ -300,8 +300,10 @@ EOF
             log_info "Incus 初始化完成"
         fi
         
-        incus image copy images:alpine/3.18 local: --alias alpine/3.18 --auto-update &>/dev/null || true
-        incus image copy images:debian/11 local: --alias debian/11 --auto-update &>/dev/null || true
+        log_step "下载 Alpine 3.18 镜像..."
+        incus image copy images:alpine/3.18 local: --alias alpine/3.18 --auto-update || log_warn "下载 Alpine 3.18 镜像失败"
+        log_step "下载 Debian 11 镜像..."
+        incus image copy images:debian/11 local: --alias debian/11 --auto-update || log_warn "下载 Debian 11 镜像失败"
         
     elif command -v lxc &>/dev/null; then
         if ! lxc info &>/dev/null 2>&1; then
@@ -310,8 +312,10 @@ EOF
             log_info "LXD 初始化完成"
         fi
         
-        lxc image copy images:alpine/3.18 local: --alias alpine/3.18 --auto-update &>/dev/null || true
-        lxc image copy images:debian/11 local: --alias debian/11 --auto-update &>/dev/null || true
+        log_step "下载 Alpine 3.18 镜像..."
+        lxc image copy images:alpine/3.18 local: --alias alpine/3.18 --auto-update || log_warn "下载 Alpine 3.18 镜像失败"
+        log_step "下载 Debian 11 镜像..."
+        lxc image copy images:debian/11 local: --alias debian/11 --auto-update || log_warn "下载 Debian 11 镜像失败"
     fi
 }
 
