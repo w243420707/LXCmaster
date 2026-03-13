@@ -5,7 +5,7 @@
 ## 一键安装
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/w243420707/LXCmaster/main/install.sh | bash
+wget -qO install.sh https://raw.githubusercontent.com/w243420707/LXCmaster/main/install.sh && bash install.sh
 ```
 
 安装脚本会自动完成以下操作：
