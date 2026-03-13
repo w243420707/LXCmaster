@@ -18,7 +18,7 @@ wget -qO install.sh https://raw.githubusercontent.com/w243420707/LXCmaster/main/
 2. 安装并初始化 Incus
 3. 安装 Go 和 Node.js 环境
 4. 编译后端和前端
-5. 下载预设镜像 (Alpine 3.18、Debian 11)
+5. 下载预设镜像 (Alpine 3.20、Debian 12)
 6. 配置并启动服务
 
 ## 项目概述
@@ -36,7 +36,7 @@ wget -qO install.sh https://raw.githubusercontent.com/w243420707/LXCmaster/main/
 - Web 终端控制台
 - Swap 内存支持 (内存不足时使用宿主机 Swap)
 - TUN 设备支持 (支持 WARP、WireGuard 等 VPN 工具)
-- 预设镜像 (Alpine 3.18、Debian 11，安装时自动下载)
+- 预设镜像 (Alpine 3.20、Debian 12，安装时自动下载)
 
 ---
 
@@ -131,7 +131,7 @@ GET    /api/storage              - 列出存储池
 | 参数 | 类型 | 说明 |
 |------|------|------|
 | name | string | 容器名称 |
-| image | string | 镜像别名 (预设: alpine/3.18, debian/11) |
+| image | string | 镜像别名 (预设: alpine/3.20, debian/bookworm) |
 | cpu | int64 | CPU 核心数 |
 | memory | int64 | 内存限制 (MB) |
 | diskMax | int64 | 最大存储限制 (GB)，共享宿主机存储 |
@@ -146,8 +146,8 @@ GET    /api/storage              - 列出存储池
 **预设镜像 (安装时自动下载):**
 | 镜像 | 说明 |
 |------|------|
-| `images:alpine/3.18` | Alpine 3.18 (轻量推荐) |
-| `images:debian/11` | Debian 11 (稳定) |
+| `images:alpine/3.20` | Alpine 3.20 (轻量推荐) |
+| `images:debian/bookworm` | Debian 12 Bookworm (稳定) |
 
 **端口映射参数:**
 | 参数 | 说明 |

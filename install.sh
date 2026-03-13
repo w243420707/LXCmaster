@@ -262,6 +262,31 @@ install_incus() {
 }
 
 init_incus() {
+    ensure_local_image() {
+        local client_cmd="$1"
+        local display_name="$2"
+        local local_alias="$3"
+        shift 3
+        local remote_aliases=("$@")
+
+        if "$client_cmd" image info "local:${local_alias}" &>/dev/null; then
+            log_info "镜像已存在: ${local_alias}"
+            return 0
+        fi
+
+        for remote_alias in "${remote_aliases[@]}"; do
+            log_step "下载 ${display_name} 镜像 (${remote_alias} -> ${local_alias})..."
+            if "$client_cmd" image copy "images:${remote_alias}" local: --alias "$local_alias" --auto-update; then
+                log_info "镜像下载完成: ${local_alias}"
+                return 0
+            fi
+            log_warn "下载失败，尝试其他别名... (${remote_alias})"
+        done
+
+        log_warn "下载 ${display_name} 镜像失败，请稍后在面板中手动导入"
+        return 1
+    }
+
     if command -v incus &>/dev/null; then
         if ! incus info &>/dev/null 2>&1; then
             log_step "初始化 Incus..."
@@ -299,11 +324,9 @@ profiles:
 EOF
             log_info "Incus 初始化完成"
         fi
-        
-        log_step "下载 Alpine 3.20 镜像..."
-        incus image copy images:alpine/3.20 local: --alias alpine/3.20 --auto-update || log_warn "下载 Alpine 3.20 镜像失败"
-        log_step "下载 Debian 12 (bookworm) 镜像..."
-        incus image copy images:debian/bookworm local: --alias debian/bookworm --auto-update || log_warn "下载 Debian 12 镜像失败"
+
+        ensure_local_image incus "Alpine 3.20" "alpine/3.20" "alpine/3.20"
+        ensure_local_image incus "Debian 12" "debian/bookworm" "debian/bookworm" "debian/12"
         
     elif command -v lxc &>/dev/null; then
         if ! lxc info &>/dev/null 2>&1; then
@@ -311,11 +334,9 @@ EOF
             lxd init --auto
             log_info "LXD 初始化完成"
         fi
-        
-        log_step "下载 Alpine 3.20 镜像..."
-        lxc image copy images:alpine/3.20 local: --alias alpine/3.20 --auto-update || log_warn "下载 Alpine 3.20 镜像失败"
-        log_step "下载 Debian 12 (bookworm) 镜像..."
-        lxc image copy images:debian/bookworm local: --alias debian/bookworm --auto-update || log_warn "下载 Debian 12 镜像失败"
+
+        ensure_local_image lxc "Alpine 3.20" "alpine/3.20" "alpine/3.20"
+        ensure_local_image lxc "Debian 12" "debian/bookworm" "debian/bookworm" "debian/12"
     fi
 }
 

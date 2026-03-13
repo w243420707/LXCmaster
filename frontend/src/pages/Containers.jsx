@@ -99,7 +99,7 @@ function Containers() {
       setShowCreate(false)
       setCreateForm({
         name: '',
-        image: 'alpine/3.18',
+        image: 'alpine/3.20',
         cpu: 1,
         memory: 512,
         diskMax: 10,
