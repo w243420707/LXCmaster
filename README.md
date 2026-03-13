@@ -5,7 +5,7 @@
 ## 一键安装
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/你的用户名/LXCmaster/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/w243420707/LXCmaster/main/install.sh | bash
 ```
 
 > **前提条件**: 需要先安装 Incus 并完成初始化 (`incus admin init`)
