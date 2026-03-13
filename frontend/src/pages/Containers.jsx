@@ -3,8 +3,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 
 const PRESET_IMAGES = [
-  { value: 'alpine/3.18', label: 'Alpine 3.18 (轻量推荐)', os: 'Alpine' },
-  { value: 'debian/11', label: 'Debian 11 (稳定)', os: 'Debian' },
+  { value: 'alpine/3.20', label: 'Alpine 3.20 (轻量推荐)', os: 'Alpine' },
+  { value: 'debian/bookworm', label: 'Debian 12 Bookworm (稳定)', os: 'Debian' },
 ]
 
 function Containers() {
@@ -18,7 +18,7 @@ function Containers() {
   const [creatingContainer, setCreatingContainer] = useState(null)
   const [createForm, setCreateForm] = useState({
     name: '',
-    image: 'alpine/3.18',
+    image: 'alpine/3.20',
     cpu: 1,
     memory: 512,
     diskMax: 10,

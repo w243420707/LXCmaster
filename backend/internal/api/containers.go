@@ -260,7 +260,7 @@ func CreateContainer(c *gin.Context) {
 
 	imageAlias := req.Image
 	if imageAlias == "" {
-		imageAlias = "alpine/3.18"
+		imageAlias = "alpine/3.20"
 	}
 
 	source := incusapi.InstanceSource{
