@@ -7,6 +7,7 @@ import (
 	"lxcmaster/internal/config"
 	"lxcmaster/internal/incus"
 	"log"
+	"os"
 )
 
 func main() {
@@ -19,9 +20,19 @@ func main() {
 		cfg.Server.Port = *port
 	}
 
-	if err := incus.Init(cfg.Incus.SocketPath); err != nil {
-		log.Fatal("Failed to connect to Incus:", err)
+	socketPath := cfg.Incus.SocketPath
+	
+	if _, err := os.Stat(socketPath); os.IsNotExist(err) {
+		log.Printf("Configured socket path %s not found, auto-detecting...", socketPath)
+		socketPath = incus.DetectSocketPath()
+		log.Printf("Using socket path: %s", socketPath)
 	}
+
+	if err := incus.Init(socketPath); err != nil {
+		log.Fatal("Failed to connect to Incus/LXD:", err)
+	}
+
+	log.Printf("Connected to Incus/LXD at %s", socketPath)
 
 	router := api.SetupRouter(cfg)
 

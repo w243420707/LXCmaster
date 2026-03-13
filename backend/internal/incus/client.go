@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 
 	incus "github.com/lxc/incus/client"
 	"github.com/lxc/incus/shared/api"
@@ -18,12 +19,12 @@ var DefaultClient *Client
 
 func NewClient(socketPath string) (*Client, error) {
 	if _, err := os.Stat(socketPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("incus socket not found at %s", socketPath)
+		return nil, fmt.Errorf("socket not found at %s", socketPath)
 	}
 
 	client, err := incus.ConnectIncusUnix(socketPath, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to incus: %w", err)
+		return nil, fmt.Errorf("failed to connect to incus/lxd at %s: %w", socketPath, err)
 	}
 
 	return &Client{client: client}, nil
@@ -32,7 +33,31 @@ func NewClient(socketPath string) (*Client, error) {
 func Init(socketPath string) error {
 	var err error
 	DefaultClient, err = NewClient(socketPath)
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to initialize incus client: %w", err)
+	}
+	return nil
+}
+
+func DetectSocketPath() string {
+	possiblePaths := []string{
+		"/var/lib/incus/unix.socket",
+		"/var/snap/lxd/common/lxd/unix.socket",
+		"/var/lib/lxd/unix.socket",
+	}
+
+	for _, path := range possiblePaths {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+
+	return "/var/lib/incus/unix.socket"
+}
+
+func IsLXD() bool {
+	socketPath := DetectSocketPath()
+	return strings.Contains(socketPath, "lxd")
 }
 
 func (c *Client) ListInstances() ([]api.Instance, error) {
