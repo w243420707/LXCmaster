@@ -90,7 +90,11 @@ func (c *Client) ListStoragePools() ([]api.StoragePool, error) {
 }
 
 func (c *Client) ExecInstance(name string, req api.InstanceExecPost) (incus.Operation, error) {
-	return c.client.ExecInstance(name, req, nil)
+	op, err := c.client.ExecInstance(name, req, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return op, nil
 }
 
 func (c *Client) GetInstanceConsole(name string) (*http.Response, error) {

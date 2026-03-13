@@ -19,6 +19,9 @@ function Containers() {
     memory: 512,
     diskMax: 10,
     enableSwap: true,
+    enableSSH: true,
+    sshPort: 22,
+    rootPassword: '',
     portMappings: [],
   })
   const [newPort, setNewPort] = useState({
@@ -58,6 +61,9 @@ function Containers() {
         memory: 512,
         diskMax: 10,
         enableSwap: true,
+        enableSSH: true,
+        sshPort: 22,
+        rootPassword: '',
         portMappings: [],
       })
       loadData()
@@ -139,7 +145,7 @@ function Containers() {
 
       {showCreate && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 overflow-y-auto py-8">
-          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-lg border border-gray-700 my-auto">
+          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-lg border border-gray-700 my-auto max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold mb-4">创建容器</h3>
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
@@ -242,6 +248,55 @@ function Containers() {
                       </span>
                     </label>
                   </div>
+                </div>
+              </div>
+
+              <div className="border-t border-gray-700 pt-4">
+                <h4 className="text-sm font-medium text-gray-300 mb-3">SSH 配置</h4>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={createForm.enableSSH}
+                        onChange={(e) =>
+                          setCreateForm({ ...createForm, enableSSH: e.target.checked })
+                        }
+                        className="w-4 h-4 rounded"
+                      />
+                      <span className="text-sm text-gray-300">启用 SSH</span>
+                    </label>
+                    {createForm.enableSSH && (
+                      <div className="flex items-center gap-2">
+                        <label className="text-sm text-gray-400">宿主机端口:</label>
+                        <input
+                          type="number"
+                          value={createForm.sshPort}
+                          onChange={(e) =>
+                            setCreateForm({ ...createForm, sshPort: parseInt(e.target.value) || 22 })
+                          }
+                          className="w-24 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm"
+                          min="1"
+                          max="65535"
+                        />
+                        <span className="text-xs text-gray-500">→ 容器 22 端口</span>
+                      </div>
+                    )}
+                  </div>
+                  {createForm.enableSSH && (
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">Root 密码</label>
+                      <input
+                        type="text"
+                        value={createForm.rootPassword}
+                        onChange={(e) =>
+                          setCreateForm({ ...createForm, rootPassword: e.target.value })
+                        }
+                        className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
+                        placeholder="留空则自动生成随机密码"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 

@@ -125,6 +125,9 @@ type CreateContainerRequest struct {
 	Memory       int64         `json:"memory"`
 	DiskMax      int64         `json:"diskMax"`
 	EnableSwap   bool          `json:"enableSwap"`
+	EnableSSH    bool          `json:"enableSSH"`
+	SSHPort      int           `json:"sshPort"`
+	RootPassword string        `json:"rootPassword"`
 	PortMappings []PortMapping `json:"portMappings"`
 	Config       map[string]string `json:"config"`
 	Profiles     []string      `json:"profiles"`
@@ -207,6 +210,14 @@ func CreateContainer(c *gin.Context) {
 		}
 	}
 
+	if req.EnableSSH && req.SSHPort > 0 {
+		devices["ssh"] = map[string]string{
+			"type":    "proxy",
+			"listen":  fmt.Sprintf("tcp:0.0.0.0:%d", req.SSHPort),
+			"connect": "tcp:127.0.0.1:22",
+		}
+	}
+
 	imageAlias := req.Image
 	if imageAlias == "" {
 		imageAlias = "alpine/3.18"
@@ -230,10 +241,57 @@ func CreateContainer(c *gin.Context) {
 		return
 	}
 
+	if req.EnableSSH {
+		go func() {
+			_ = op.Wait()
+			
+			startOp, err := incus.DefaultClient.StartInstance(req.Name)
+			if err == nil {
+				_ = startOp.Wait()
+			}
+			
+			setupSSH(req.Name, req.RootPassword)
+		}()
+	}
+
 	c.JSON(http.StatusAccepted, gin.H{
 		"operation": op.ID(),
 		"message":   "container creation initiated",
+		"ssh_port":  req.SSHPort,
 	})
+}
+
+func setupSSH(name, password string) {
+	if password == "" {
+		password = generateRandomPassword()
+	}
+
+	commands := []string{
+		"command -v apk && apk add --no-cache openssh || (apt-get update && apt-get install -y openssh-server)",
+		"mkdir -p /root/.ssh /run/sshd",
+		fmt.Sprintf("echo 'root:%s' | chpasswd", password),
+		"sed -i 's/#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config 2>/dev/null || echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config",
+		"sed -i 's/PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config 2>/dev/null",
+		"command -v rc-service && rc-service sshd start || (systemctl start ssh 2>/dev/null || /usr/sbin/sshd)",
+	}
+
+	for _, cmd := range commands {
+		execReq := incusapi.InstanceExecPost{
+			Command:     []string{"sh", "-c", cmd},
+			WaitForWS:   false,
+			Interactive: false,
+		}
+		_, _ = incus.DefaultClient.ExecInstance(name, execReq)
+	}
+}
+
+func generateRandomPassword() string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, 12)
+	for i := range b {
+		b[i] = charset[i%len(charset)]
+	}
+	return string(b)
 }
 
 type UpdateContainerRequest struct {

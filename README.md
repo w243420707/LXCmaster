@@ -131,6 +131,9 @@ GET    /api/storage              - 列出存储池
 | memory | int64 | 内存限制 (MB) |
 | diskMax | int64 | 最大存储限制 (GB)，共享宿主机存储 |
 | enableSwap | bool | 启用 Swap 支持 (内存不足时使用宿主机 Swap) |
+| enableSSH | bool | 启用 SSH (自动安装并配置) |
+| sshPort | int | SSH 宿主机端口 |
+| rootPassword | string | Root 密码 (留空自动生成) |
 | portMappings | array | 端口映射列表 |
 | network | string | 网络名称 |
 | storage | string | 存储池名称 |
