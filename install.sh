@@ -8,6 +8,7 @@ SERVICE_USER="lxcmaster"
 DEFAULT_PORT=2026
 PORT=""
 INCUS_SOCKET=""
+SOURCE_DIR="/tmp/lxcmaster-src"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -344,6 +345,15 @@ install_dependencies() {
     install_nodejs
 }
 
+clone_repo() {
+    log_step "克隆项目源码..."
+    
+    rm -rf "$SOURCE_DIR"
+    git clone --depth 1 https://github.com/w243420707/LXCmaster.git "$SOURCE_DIR"
+    
+    log_info "源码克隆完成: $SOURCE_DIR"
+}
+
 create_user() {
     if ! id "$SERVICE_USER" &>/dev/null; then
         log_info "创建服务用户: $SERVICE_USER"
@@ -363,8 +373,7 @@ create_directories() {
 build_backend() {
     log_step "构建后端服务..."
     
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    cd "$SCRIPT_DIR/backend"
+    cd "$SOURCE_DIR/backend"
     
     export GOPROXY=https://goproxy.cn,direct
     export PATH=$PATH:/usr/local/go/bin
@@ -379,8 +388,7 @@ build_backend() {
 build_frontend() {
     log_step "构建前端界面..."
     
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    cd "$SCRIPT_DIR/frontend"
+    cd "$SOURCE_DIR/frontend"
     
     npm install --registry=https://registry.npmmirror.com --silent
     npm run build
@@ -515,7 +523,7 @@ print_success() {
     echo -e "${YELLOW}➤ 常用命令:${NC}"
     echo -e "   查看状态: systemctl status lxcmaster"
     echo -e "   查看日志: journalctl -u lxcmaster -f"
-    echo -e "   重启服务: systemctl restart lxcmaster"
+    echo -e "   重新启动: systemctl restart lxcmaster"
     echo -e "   停止服务: systemctl stop lxcmaster"
     echo ""
     echo -e "${YELLOW}➤ 配置文件:${NC} $DATA_DIR/config.json"
@@ -540,6 +548,7 @@ main() {
     get_port
     install_incus
     install_dependencies
+    clone_repo
     create_user
     create_directories
     build_backend
