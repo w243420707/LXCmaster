@@ -12,6 +12,8 @@ function Containers() {
   const [images, setImages] = useState([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [createProgress, setCreateProgress] = useState('')
   const [createForm, setCreateForm] = useState({
     name: '',
     image: 'alpine/3.18',
@@ -49,10 +51,55 @@ function Containers() {
     }
   }
 
+  const waitForContainer = async (name, timeout = 120000) => {
+    const startTime = Date.now()
+    while (Date.now() - startTime < timeout) {
+      try {
+        const container = await api.containers.get(name)
+        if (container.container?.status === 'Running') {
+          return true
+        }
+      } catch (e) {
+        // Container might not exist yet
+      }
+      await new Promise(r => setTimeout(r, 2000))
+    }
+    return false
+  }
+
   const handleCreate = async (e) => {
     e.preventDefault()
+    setCreating(true)
+    setCreateProgress('正在创建容器...')
+    
     try {
       await api.containers.create(createForm)
+      setCreateProgress('容器创建中，请稍候...')
+      
+      // Wait for container to be created
+      let attempts = 0
+      const maxAttempts = 30
+      while (attempts < maxAttempts) {
+        try {
+          const containers = await api.containers.list()
+          const newContainer = containers.find(c => c.name === createForm.name)
+          if (newContainer) {
+            if (createForm.enableSSH) {
+              setCreateProgress('容器已创建，正在配置 SSH...')
+              // Wait for SSH setup (container needs to start)
+              await new Promise(r => setTimeout(r, 10000))
+            }
+            break
+          }
+        } catch (e) {
+          // Ignore errors while polling
+        }
+        await new Promise(r => setTimeout(r, 2000))
+        attempts++
+        setCreateProgress(`正在等待容器就绪... (${attempts}/${maxAttempts})`)
+      }
+      
+      setCreateProgress('创建完成！')
       setShowCreate(false)
       setCreateForm({
         name: '',
@@ -68,7 +115,10 @@ function Containers() {
       })
       loadData()
     } catch (err) {
-      alert('创建失败: ' + err.message)
+      setCreateProgress('创建失败: ' + err.message)
+    } finally {
+      setCreating(false)
+      setTimeout(() => setCreateProgress(''), 3000)
     }
   }
 
@@ -143,6 +193,19 @@ function Containers() {
         </button>
       </div>
 
+      {createProgress && (
+        <div className="fixed top-4 right-4 bg-gray-800 border border-gray-600 rounded-lg p-4 shadow-lg z-50 max-w-sm">
+          <div className="flex items-center gap-3">
+            {creating && (
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
+            )}
+            <span className={creating ? 'text-blue-400' : 'text-green-400'}>
+              {createProgress}
+            </span>
+          </div>
+        </div>
+      )}
+
       {showCreate && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 overflow-y-auto py-8">
           <div className="bg-gray-800 rounded-lg p-6 w-full max-w-lg border border-gray-700 my-auto max-h-[90vh] overflow-y-auto">
@@ -159,6 +222,7 @@ function Containers() {
                   className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
                   placeholder="例如: my-container"
                   required
+                  disabled={creating}
                 />
               </div>
 
@@ -171,6 +235,7 @@ function Containers() {
                   }
                   className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
                   required
+                  disabled={creating}
                 >
                   {PRESET_IMAGES.map((img) => (
                     <option key={img.value} value={img.value}>
@@ -201,6 +266,7 @@ function Containers() {
                     className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
                     min="1"
                     max="64"
+                    disabled={creating}
                   />
                 </div>
                 <div>
@@ -213,6 +279,7 @@ function Containers() {
                     }
                     className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
                     min="64"
+                    disabled={creating}
                   />
                 </div>
               </div>
@@ -228,6 +295,7 @@ function Containers() {
                     }
                     className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
                     min="1"
+                    disabled={creating}
                   />
                   <p className="text-xs text-gray-500 mt-1">共享宿主机存储，限制最大使用量</p>
                 </div>
@@ -242,6 +310,7 @@ function Containers() {
                           setCreateForm({ ...createForm, enableSwap: e.target.checked })
                         }
                         className="w-4 h-4 rounded"
+                        disabled={creating}
                       />
                       <span className="text-sm text-gray-300">
                         启用 (内存不足时使用宿主机Swap)
@@ -263,6 +332,7 @@ function Containers() {
                           setCreateForm({ ...createForm, enableSSH: e.target.checked })
                         }
                         className="w-4 h-4 rounded"
+                        disabled={creating}
                       />
                       <span className="text-sm text-gray-300">启用 SSH</span>
                     </label>
@@ -278,6 +348,7 @@ function Containers() {
                           className="w-24 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm"
                           min="1"
                           max="65535"
+                          disabled={creating}
                         />
                         <span className="text-xs text-gray-500">→ 容器 22 端口</span>
                       </div>
@@ -294,6 +365,7 @@ function Containers() {
                         }
                         className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
                         placeholder="留空则自动生成随机密码"
+                        disabled={creating}
                       />
                     </div>
                   )}
@@ -315,6 +387,7 @@ function Containers() {
                         type="button"
                         onClick={() => removePortMapping(index)}
                         className="text-red-400 hover:text-red-300 text-sm"
+                        disabled={creating}
                       >
                         删除
                       </button>
@@ -331,6 +404,7 @@ function Containers() {
                               checked={newPort.ipVersions.includes('v4')}
                               onChange={() => toggleIpVersion('v4')}
                               className="w-3 h-3"
+                              disabled={creating}
                             />
                             IPv4
                           </label>
@@ -340,6 +414,7 @@ function Containers() {
                               checked={newPort.ipVersions.includes('v6')}
                               onChange={() => toggleIpVersion('v6')}
                               className="w-3 h-3"
+                              disabled={creating}
                             />
                             IPv6
                           </label>
@@ -354,6 +429,7 @@ function Containers() {
                               checked={newPort.protocols.includes('tcp')}
                               onChange={() => toggleProtocol('tcp')}
                               className="w-3 h-3"
+                              disabled={creating}
                             />
                             TCP
                           </label>
@@ -363,6 +439,7 @@ function Containers() {
                               checked={newPort.protocols.includes('udp')}
                               onChange={() => toggleProtocol('udp')}
                               className="w-3 h-3"
+                              disabled={creating}
                             />
                             UDP
                           </label>
@@ -376,6 +453,7 @@ function Containers() {
                         onChange={(e) => setNewPort({ ...newPort, hostPort: e.target.value })}
                         placeholder="宿主端口 (如 80-100)"
                         className="bg-gray-700 border border-gray-600 rounded px-2 py-2 text-sm"
+                        disabled={creating}
                       />
                       <input
                         type="text"
@@ -383,11 +461,12 @@ function Containers() {
                         onChange={(e) => setNewPort({ ...newPort, containerPort: e.target.value })}
                         placeholder="容器端口 (如 80-100)"
                         className="bg-gray-700 border border-gray-600 rounded px-2 py-2 text-sm"
+                        disabled={creating}
                       />
                       <button
                         type="button"
                         onClick={addPortMapping}
-                        disabled={!newPort.hostPort || !newPort.containerPort || newPort.protocols.length === 0 || newPort.ipVersions.length === 0}
+                        disabled={!newPort.hostPort || !newPort.containerPort || newPort.protocols.length === 0 || newPort.ipVersions.length === 0 || creating}
                         className="bg-gray-600 hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed px-3 py-2 rounded text-sm"
                       >
                         添加
@@ -402,14 +481,19 @@ function Containers() {
                   type="button"
                   onClick={() => setShowCreate(false)}
                   className="px-4 py-2 rounded border border-gray-600 hover:bg-gray-700"
+                  disabled={creating}
                 >
                   取消
                 </button>
                 <button
                   type="submit"
-                  className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded"
+                  className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded disabled:opacity-50 flex items-center gap-2"
+                  disabled={creating}
                 >
-                  创建
+                  {creating && (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  )}
+                  {creating ? '创建中...' : '创建'}
                 </button>
               </div>
             </form>
@@ -505,8 +589,24 @@ function Containers() {
                           启动
                         </button>
                       )}
+                      <Link
+                        to={`/containers/${container.name}`}
+                        className="text-gray-400 hover:text-gray-300"
+                      >
+                        详情
+                      </Link>
+                      <Link
+                        to={`/terminal/${container.name}`}
+                        className="text-purple-400 hover:text-purple-300"
+                      >
+                        终端
+                      </Link>
                       <button
-                        onClick={() => handleAction(container.name, 'delete')}
+                        onClick={() => {
+                          if (confirm(`确定要删除容器 ${container.name} 吗？`)) {
+                            handleAction(container.name, 'delete')
+                          }
+                        }}
                         className="text-red-400 hover:text-red-300"
                       >
                         删除
